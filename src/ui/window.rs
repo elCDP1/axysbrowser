@@ -1,6 +1,6 @@
 use gtk::prelude::*;
 use gtk::{
-    Application, ApplicationWindow, Box, CssProvider, EventControllerKey, Orientation, Stack,
+    Application, ApplicationWindow, Box, EventControllerKey, Orientation, Stack,
     StackTransitionType, gdk, gio, glib::Propagation, style_context_add_provider_for_display,
 };
 use std::cell::{Cell, RefCell};
@@ -65,122 +65,21 @@ fn build_browser_window(
         .resizable(true)
         .build();
 
-    let css = CssProvider::new();
-
-    css.load_from_data(
-        r#"
-        .address-top {
-            min-height: 18px;
-            padding: 5px 12px;
-            border-radius: 16px;
-            border: 1px solid alpha(@theme_fg_color, 0.08);
-            background: alpha(@theme_fg_color, 0.045);
-            box-shadow: none;
-            font-size: 0.90em;
-        }
-
-        .address-top:focus {
-            border-color: alpha(@theme_selected_bg_color, 0.45);
-            background: alpha(@theme_fg_color, 0.07);
-        }
-
-        .search-main {
-            min-height: 34px;
-            padding: 10px 16px;
-            border-radius: 18px;
-            border: 1px solid alpha(@theme_fg_color, 0.10);
-            background: alpha(@theme_fg_color, 0.055);
-            box-shadow: none;
-            font-size: 0.92em;
-        }
-
-        .search-main:focus {
-            border-color: alpha(@theme_selected_bg_color, 0.55);
-            background: alpha(@theme_fg_color, 0.08);
-        }
-
-        .tab {
-            min-height: 30px;
-            padding: 2px 4px 2px 9px;
-            border-radius: 9px;
-            background: transparent;
-        }
-
-        .tab:hover {
-            background: alpha(@theme_fg_color, 0.06);
-        }
-
-        .tab.active {
-            background: alpha(@theme_fg_color, 0.10);
-        }
-
-        .tab-select {
-            padding: 2px 5px;
-            border-radius: 7px;
-            background: transparent;
-            box-shadow: none;
-        }
-
-        .tab-close {
-            opacity: 0;
-            min-width: 20px;
-            min-height: 20px;
-            padding: 0;
-            border-radius: 6px;
-        }
-
-        .tab:hover .tab-close,
-        .tab.active .tab-close {
-            opacity: 1;
-        }
-
-        .newtab-logo {
-            font-size: 3.8em;
-            font-weight: 600;
-            padding: 4px 18px;
-            border-radius: 12px;
-            background: transparent;
-            box-shadow: none;
-        }
-
-        .newtab-logo:hover {
-            background: alpha(@theme_fg_color, 0.06);
-        }
-
-        .newtab-logo:active {
-            background: alpha(@theme_fg_color, 0.10);
-        }
-
-        button.flat {
-            min-width: 30px;
-            min-height: 30px;
-            padding: 4px;
-            border-radius: 9px;
-            box-shadow: none;
-        }
-
-        button.flat:hover {
-            background: alpha(@theme_fg_color, 0.07);
-        }
-
-        button.flat:active {
-            background: alpha(@theme_fg_color, 0.12);
-        }
-
-        .private-banner {
-            padding: 6px 12px;
-            border-radius: 12px;
-            background: alpha(@theme_selected_bg_color, 0.10);
-        }
-        "#,
-    );
-
-    if let Some(display) = gdk::Display::default() {
+    // El CSS de los widgets personalizados (pestañas, barra de direcciones,
+    // logo, banner de privacidad...) vive en `state.css_provider` y ya trae
+    // cargada la paleta correspondiente al tema actual (ver `AppState::apply_theme`).
+    // Solo lo registramos una vez por display, para que cambiar el tema desde
+    // Ajustes actualice todas las ventanas abiertas sin duplicar el proveedor.
+    if !state.css_installed.get()
+        && let Some(display) = gdk::Display::default()
+    {
         style_context_add_provider_for_display(
             &display,
-            &css,
+            &state.css_provider,
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
+
+        state.css_installed.set(true);
     }
 
     let root = Box::new(Orientation::Vertical, 0);

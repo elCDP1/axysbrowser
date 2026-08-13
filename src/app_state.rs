@@ -1,8 +1,10 @@
 use crate::browser::address::{SearchConfig, load_config};
+use crate::theme;
+use gtk::CssProvider;
 use gtk::Settings as GtkSettings;
 use gtk::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
@@ -31,6 +33,8 @@ pub struct AppState {
     pub settings: Rc<RefCell<UserSettings>>,
     pub search: Rc<RefCell<SearchConfig>>,
     pub network_session: NetworkSession,
+    pub css_provider: CssProvider,
+    pub css_installed: Rc<Cell<bool>>,
 }
 
 impl AppState {
@@ -52,6 +56,8 @@ impl AppState {
             settings: Rc::new(RefCell::new(settings)),
             search: Rc::new(RefCell::new(search)),
             network_session,
+            css_provider: CssProvider::new(),
+            css_installed: Rc::new(Cell::new(false)),
         });
 
         state.apply_theme();
@@ -98,12 +104,19 @@ impl AppState {
         }
     }
 
+    /// Aplica el tema actual: ajusta la preferencia oscura de GTK para los
+    /// widgets nativos (botones, ventana, scrollbars...) y recarga la hoja
+    /// de estilos personalizada (pestañas, barra de direcciones, logo...)
+    /// con la paleta correspondiente. Al usar un único `CssProvider`
+    /// compartido, todas las ventanas abiertas se actualizan al instante.
     pub fn apply_theme(&self) {
         let dark = self.settings.borrow().dark_mode;
 
         if let Some(gtk_settings) = GtkSettings::default() {
             gtk_settings.set_property("gtk-application-prefer-dark-theme", dark);
         }
+
+        self.css_provider.load_from_data(&theme::stylesheet(dark));
     }
 
     pub fn set_search_engine(&self, engine: &str) {
