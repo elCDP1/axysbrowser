@@ -25,7 +25,6 @@ fn maximize_window(window: &ApplicationWindow) {
 
 pub fn build_window(app: &Application, state: Rc<AppState>) {
     let session = state.network_session.clone();
-
     let search = state.search.clone();
 
     build_browser_window(app, state, session, search, false);
@@ -35,7 +34,6 @@ pub fn build_private_window(app: &Application, state: Rc<AppState>) {
     let session = NetworkSession::new_ephemeral();
 
     session.set_itp_enabled(true);
-
     session.set_persistent_credential_storage_enabled(false);
 
     state.downloads.watch(&session);
@@ -67,6 +65,7 @@ fn build_browser_window(
     let window = ApplicationWindow::builder()
         .application(app)
         .title(window_title)
+        .icon_name("axysbrowser")
         .resizable(true)
         .build();
 
@@ -107,7 +106,6 @@ fn build_browser_window(
     let tabs = Rc::new(RefCell::new(Vec::<Tab>::new()));
 
     let active_id = Rc::new(Cell::new(usize::MAX));
-
     let next_id = Rc::new(Cell::new(0usize));
 
     let top_stack = Stack::new();
@@ -537,15 +535,11 @@ fn build_browser_window(
         let current_web_view = current_web_view.clone();
 
         let tabbar_slot = Rc::downgrade(&tabbar_slot);
-
         let toolbar_slot = Rc::downgrade(&toolbar_slot);
-
         let bookmark_bar_slot = Rc::downgrade(&bookmark_bar_slot);
 
         let navigate_tab = navigate_tab.clone();
-
         let state = state.clone();
-
         let session = session.clone();
 
         Rc::new(move |starting_uri: Option<&str>| {
@@ -564,11 +558,8 @@ fn build_browser_window(
             let web_view = WebView::builder().network_session(&session).build();
 
             web_view.set_hexpand(true);
-
             web_view.set_vexpand(true);
-
             web_view.set_halign(gtk::Align::Fill);
-
             web_view.set_valign(gtk::Align::Fill);
 
             BrowserEngine::configure(&web_view, state.settings.borrow().developer_tools);
@@ -710,13 +701,9 @@ fn build_browser_window(
 
             {
                 let tabs = tabs.clone();
-
                 let active_id = active_id.clone();
-
                 let toolbar_slot = toolbar_slot.clone();
-
                 let tabbar_slot = tabbar_slot.clone();
-
                 let bookmark_bar_slot = bookmark_bar_slot.clone();
 
                 web_view.connect_uri_notify(move |view| {
@@ -752,9 +739,7 @@ fn build_browser_window(
 
             {
                 let tabs = tabs.clone();
-
                 let active_id = active_id.clone();
-
                 let tabbar_slot = tabbar_slot.clone();
 
                 web_view.connect_title_notify(move |view| {
@@ -784,7 +769,6 @@ fn build_browser_window(
 
             {
                 let active_id = active_id.clone();
-
                 let toolbar_slot = toolbar_slot.clone();
 
                 web_view.connect_is_loading_notify(move |view| {
@@ -802,11 +786,8 @@ fn build_browser_window(
 
             {
                 let active_id = active_id.clone();
-
                 let toolbar_slot = toolbar_slot.clone();
-
                 let bookmark_bar_slot = bookmark_bar_slot.clone();
-
                 let state = state.clone();
 
                 web_view.connect_load_changed(move |view, event| {
@@ -881,7 +862,6 @@ fn build_browser_window(
         close_tab.clone(),
         {
             let navigate_tab = navigate_tab.clone();
-
             let active_id = active_id.clone();
 
             Rc::new(move || {
@@ -896,7 +876,6 @@ fn build_browser_window(
         current_web_view.clone(),
         {
             let navigate_tab = navigate_tab.clone();
-
             let active_id = active_id.clone();
 
             Rc::new(move |input: String| {
@@ -905,11 +884,8 @@ fn build_browser_window(
         },
         {
             let tabs = tabs.clone();
-
             let active_id = active_id.clone();
-
             let navigate_tab = navigate_tab.clone();
-
             let current_web_view = current_web_view.clone();
 
             Rc::new(move || {
@@ -945,7 +921,6 @@ fn build_browser_window(
 
     let bookmark_bar = BookmarkBar::new(state.clone(), {
         let navigate_tab = navigate_tab.clone();
-
         let active_id = active_id.clone();
 
         Rc::new(move |url: String| {
@@ -975,19 +950,12 @@ fn build_browser_window(
 
     let language_refresh: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let bookmark_bar_slot = bookmark_bar_slot.clone();
-
         let navigate_tab = navigate_tab.clone();
-
         let state = state.clone();
 
         Rc::new(move || {
@@ -1140,25 +1108,15 @@ fn build_browser_window(
 
     {
         let new_tab = new_tab.clone();
-
         let close_tab = close_tab.clone();
-
         let select_tab = select_tab.clone();
-
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let current_web_view = current_web_view.clone();
-
         let go_back = go_back.clone();
-
         let go_forward = go_forward.clone();
-
         let app_for_shortcuts = app.clone();
-
         let state_for_shortcuts = state.clone();
 
         keyboard.connect_key_pressed(move |_, key, _, modifiers| {
@@ -1402,7 +1360,6 @@ fn build_browser_window(
 
     {
         let app = app.clone();
-
         let state = state.clone();
 
         let action = gio::SimpleAction::new("new-window", None);
@@ -1416,7 +1373,6 @@ fn build_browser_window(
 
     {
         let app = app.clone();
-
         let state = state.clone();
 
         let action = gio::SimpleAction::new("privacy", None);
