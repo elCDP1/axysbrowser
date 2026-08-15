@@ -1,5 +1,7 @@
 use crate::browser::address::{SearchConfig, load_config};
+use crate::browser::downloads::DownloadManager;
 use crate::theme;
+use gtk::Application;
 use gtk::CssProvider;
 use gtk::Settings as GtkSettings;
 use gtk::prelude::*;
@@ -11,19 +13,45 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use webkit6::NetworkSession;
 
+fn default_true() -> bool {
+    true
+}
+
+fn default_search_engine() -> String {
+    "brave".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserSettings {
+    #[serde(default = "default_true")]
     pub dark_mode: bool,
+
+    #[serde(default = "default_search_engine")]
     pub search_engine: String,
+
+    #[serde(default = "default_true")]
     pub show_extensions: bool,
+
+    /// Enables the WebKit Web Inspector for tabs opened after this is toggled.
+    /// Does not retroactively affect tabs that are already open.
+    #[serde(default = "default_true")]
+    pub developer_tools: bool,
+
+    /// Enables WebKit's Intelligent Tracking Prevention on the shared,
+    /// persistent network session used by normal (non-private) windows.
+    /// Applies immediately, including to already-open tabs.
+    #[serde(default = "default_true")]
+    pub tracking_prevention: bool,
 }
 
 impl Default for UserSettings {
     fn default() -> Self {
         Self {
             dark_mode: true,
-            search_engine: "brave".to_string(),
+            search_engine: default_search_engine(),
             show_extensions: true,
+            developer_tools: true,
+            tracking_prevention: true,
         }
     }
 }
@@ -35,10 +63,11 @@ pub struct AppState {
     pub network_session: NetworkSession,
     pub css_provider: CssProvider,
     pub css_installed: Rc<Cell<bool>>,
+    pub downloads: DownloadManager,
 }
 
 impl AppState {
-    pub fn load() -> Rc<Self> {
+    pub fn load(application: &Application) -> Rc<Self> {
         let mut settings = Self::load_user_settings();
         let mut search = load_config();
 
@@ -52,12 +81,19 @@ impl AppState {
 
         network_session.set_persistent_credential_storage_enabled(true);
 
+        network_session.set_itp_enabled(settings.tracking_prevention);
+
+        let downloads = DownloadManager::new(application.clone());
+
+        downloads.watch(&network_session);
+
         let state = Rc::new(Self {
             settings: Rc::new(RefCell::new(settings)),
             search: Rc::new(RefCell::new(search)),
             network_session,
             css_provider: CssProvider::new(),
             css_installed: Rc::new(Cell::new(false)),
+            downloads,
         });
 
         state.apply_theme();
@@ -140,6 +176,23 @@ impl AppState {
 
     pub fn set_extensions_visible(&self, visible: bool) {
         self.settings.borrow_mut().show_extensions = visible;
+
+        self.save();
+    }
+
+    /// Solo afecta a pestañas creadas después del cambio (ver `BrowserEngine::configure`).
+    pub fn set_developer_tools(&self, enabled: bool) {
+        self.settings.borrow_mut().developer_tools = enabled;
+
+        self.save();
+    }
+
+    /// Aplica de inmediato: actúa sobre la sesión de red compartida, no sobre
+    /// cada `WebView` individualmente, así que afecta también a pestañas ya abiertas.
+    pub fn set_tracking_prevention(&self, enabled: bool) {
+        self.settings.borrow_mut().tracking_prevention = enabled;
+
+        self.network_session.set_itp_enabled(enabled);
 
         self.save();
     }

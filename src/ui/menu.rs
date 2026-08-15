@@ -9,6 +9,7 @@ pub fn build_menu() -> MenuButton {
     let menu = gio::Menu::new();
 
     menu.append_submenu(Some("Navigation"), &navigation);
+    menu.append(Some("Downloads"), Some("win.downloads"));
     menu.append(Some("Privacy"), Some("win.privacy"));
     menu.append(Some("Tools"), Some("win.tools"));
     menu.append(Some("Settings"), Some("win.settings"));

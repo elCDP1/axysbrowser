@@ -3,9 +3,11 @@ use webkit6::{WebView, prelude::WebViewExt};
 pub struct BrowserEngine;
 
 impl BrowserEngine {
-    pub fn configure(view: &WebView) {
+    /// `developer_tools` refleja el ajuste del usuario en el momento de crear
+    /// la pestaña. Cambiar el ajuste después no afecta a pestañas ya abiertas.
+    pub fn configure(view: &WebView, developer_tools: bool) {
         if let Some(settings) = webkit6::prelude::WebViewExt::settings(view) {
-            settings.set_enable_developer_extras(true);
+            settings.set_enable_developer_extras(developer_tools);
 
             settings.set_enable_javascript(true);
 

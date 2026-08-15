@@ -7,6 +7,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use webkit6::{LoadEvent, NetworkSession, WebView, prelude::WebViewExt};
 
+type NewTabCallback = Rc<dyn Fn(Option<&str>) -> usize>;
+
 use crate::app_state::AppState;
 use crate::browser::address::{SearchConfig, resolve_input};
 use crate::browser::engine::BrowserEngine;
@@ -34,6 +36,10 @@ pub fn build_private_window(app: &Application, state: Rc<AppState>) {
     session.set_itp_enabled(true);
 
     session.set_persistent_credential_storage_enabled(false);
+
+    // Private windows use their own ephemeral session, so downloads
+    // triggered there must be watched separately from the normal session.
+    state.downloads.watch(&session);
 
     let mut private_search = state.search.borrow().clone();
 
@@ -273,6 +279,8 @@ fn build_browser_window(
 
         let toolbar_slot = toolbar_slot.clone();
 
+        let tabbar_slot = tabbar_slot.clone();
+
         let search = search.clone();
 
         Rc::new(move |id, input| {
@@ -294,10 +302,20 @@ fn build_browser_window(
 
                     tab.uri = target.clone();
 
+                    // Internal axys:// pages aren't loaded in the WebView, so
+                    // its `title-notify` signal never fires for them — we
+                    // have to set the tab title ourselves here, or it just
+                    // keeps whatever title the tab had before.
+                    tab.title = router::page_title(&target).to_string();
+
                     tab.push_history(target.clone());
 
                     (tab.content.clone(), tab.can_go_back(), tab.can_go_forward())
                 };
+
+                if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
+                    tabbar.refresh(&tabs.borrow(), active_id.get());
+                }
 
                 if active_id.get() == id {
                     top_stack.set_visible_child(&content);
@@ -369,6 +387,8 @@ fn build_browser_window(
 
         let toolbar_slot = toolbar_slot.clone();
 
+        let tabbar_slot = tabbar_slot.clone();
+
         Rc::new(move || {
             let id = active_id.get();
 
@@ -385,6 +405,12 @@ fn build_browser_window(
             let Some(target) = target else {
                 return;
             };
+
+            if router::page_name(&target).is_some()
+                && let Some(tab) = tabs.borrow_mut().iter_mut().find(|tab| tab.id == id)
+            {
+                tab.title = router::page_title(&target).to_string();
+            }
 
             let tab_data = {
                 let tabs_ref = tabs.borrow();
@@ -412,6 +438,10 @@ fn build_browser_window(
                     toolbar.set_loading(false);
 
                     toolbar.set_navigation_state(can_go_back, can_go_forward);
+                }
+
+                if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
+                    tabbar.refresh(&tabs.borrow(), active_id.get());
                 }
 
                 top_stack.set_visible_child(&content);
@@ -430,6 +460,8 @@ fn build_browser_window(
 
         let toolbar_slot = toolbar_slot.clone();
 
+        let tabbar_slot = tabbar_slot.clone();
+
         Rc::new(move || {
             let id = active_id.get();
 
@@ -446,6 +478,12 @@ fn build_browser_window(
             let Some(target) = target else {
                 return;
             };
+
+            if router::page_name(&target).is_some()
+                && let Some(tab) = tabs.borrow_mut().iter_mut().find(|tab| tab.id == id)
+            {
+                tab.title = router::page_title(&target).to_string();
+            }
 
             let tab_data = {
                 let tabs_ref = tabs.borrow();
@@ -475,6 +513,10 @@ fn build_browser_window(
                     toolbar.set_navigation_state(can_go_back, can_go_forward);
                 }
 
+                if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
+                    tabbar.refresh(&tabs.borrow(), active_id.get());
+                }
+
                 top_stack.set_visible_child(&content);
             } else {
                 BrowserEngine::load(&web_view, &target);
@@ -482,7 +524,7 @@ fn build_browser_window(
         })
     };
 
-    let new_tab: Rc<dyn Fn() -> usize> = {
+    let new_tab: NewTabCallback = {
         let tabs = tabs.clone();
 
         let next_id = next_id.clone();
@@ -503,7 +545,7 @@ fn build_browser_window(
 
         let session = session.clone();
 
-        Rc::new(move || {
+        Rc::new(move |starting_uri: Option<&str>| {
             let id = next_id.get();
 
             next_id.set(id + 1);
@@ -523,7 +565,7 @@ fn build_browser_window(
             web_view.set_halign(gtk::Align::Fill);
             web_view.set_valign(gtk::Align::Fill);
 
-            BrowserEngine::configure(&web_view);
+            BrowserEngine::configure(&web_view, state.settings.borrow().developer_tools);
 
             if private_mode
                 && let Some(settings) = webkit6::prelude::WebViewExt::settings(&web_view)
@@ -561,6 +603,14 @@ fn build_browser_window(
                 })
             };
 
+            let local_downloads = {
+                let navigate_tab = navigate_tab.clone();
+
+                Rc::new(move || {
+                    navigate_tab(id, "axys://downloads".to_string());
+                })
+            };
+
             for uri in [
                 "axys://welcome",
                 "axys://newtab",
@@ -568,12 +618,14 @@ fn build_browser_window(
                 "axys://about",
                 "axys://settings",
                 "axys://tools",
+                "axys://downloads",
             ] {
                 if let Some(widget) = router::route(
                     uri,
                     local_search.clone(),
                     local_about.clone(),
                     local_extensions_changed.clone(),
+                    local_downloads.clone(),
                     state.clone(),
                 ) && let Some(name) = router::page_name(uri)
                 {
@@ -581,7 +633,21 @@ fn build_browser_window(
                 }
             }
 
-            let first_page = if private_mode { "privacy" } else { "newtab" };
+            // A tab can be created either at the default start page (new
+            // tab / privacy for private windows) or landing directly on a
+            // specific axys:// page (e.g. opening Settings from the menu).
+            // Landing directly avoids leaving a fake "New Tab" entry behind
+            // it in history, which used to make the back button look
+            // active even though there was nothing real to go back to.
+            let first_uri = starting_uri.map(|uri| uri.to_string()).unwrap_or_else(|| {
+                if private_mode {
+                    "axys://privacy".to_string()
+                } else {
+                    "axys://newtab".to_string()
+                }
+            });
+
+            let first_page = router::page_name(&first_uri).unwrap_or("newtab");
 
             content.set_visible_child_name(first_page);
 
@@ -589,7 +655,15 @@ fn build_browser_window(
 
             top_stack.add_named(&content, Some(&tab_name));
 
-            let tab = Tab::new(id, content.clone(), web_view.clone());
+            let mut tab = Tab::new(id, content.clone(), web_view.clone());
+
+            tab.uri = first_uri.clone();
+
+            tab.title = router::page_title(&first_uri).to_string();
+
+            tab.history = vec![first_uri.clone()];
+
+            tab.history_index = 0;
 
             tabs.borrow_mut().push(tab);
 
@@ -602,7 +676,7 @@ fn build_browser_window(
             if let Some(toolbar_slot) = toolbar_slot.upgrade()
                 && let Some(toolbar) = toolbar_slot.borrow().as_ref()
             {
-                toolbar.address.set_text("axys://newtab");
+                toolbar.address.set_text(&first_uri);
 
                 toolbar.set_loading(false);
 
@@ -739,7 +813,7 @@ fn build_browser_window(
             let new_tab = new_tab.clone();
 
             Rc::new(move || {
-                new_tab();
+                new_tab(None);
             })
         },
         select_tab.clone(),
@@ -819,7 +893,10 @@ fn build_browser_window(
 
             if ctrl {
                 if let Some(ch) = key.to_unicode()
-                    && matches!(ch.to_ascii_lowercase(), 'n' | 't' | 'w' | 'l' | 'r' | 'p')
+                    && matches!(
+                        ch.to_ascii_lowercase(),
+                        'n' | 't' | 'w' | 'l' | 'r' | 'p' | 'j'
+                    )
                 {
                     match ch.to_ascii_lowercase() {
                         'n' => {
@@ -836,7 +913,7 @@ fn build_browser_window(
                         }
 
                         't' => {
-                            new_tab();
+                            new_tab(None);
 
                             return Propagation::Stop;
                         }
@@ -871,6 +948,12 @@ fn build_browser_window(
 
                         'p' if shift => {
                             build_private_window(&app_for_shortcuts, state_for_shortcuts.clone());
+
+                            return Propagation::Stop;
+                        }
+
+                        'j' => {
+                            new_tab(Some("axys://downloads"));
 
                             return Propagation::Stop;
                         }
@@ -1027,7 +1110,7 @@ fn build_browser_window(
         let action = gio::SimpleAction::new("new-tab", None);
 
         action.connect_activate(move |_, _| {
-            new_tab();
+            new_tab(None);
         });
 
         window.add_action(&action);
@@ -1064,14 +1147,10 @@ fn build_browser_window(
     {
         let new_tab = new_tab.clone();
 
-        let navigate_tab = navigate_tab.clone();
-
         let action = gio::SimpleAction::new("tools", None);
 
         action.connect_activate(move |_, _| {
-            let id = new_tab();
-
-            navigate_tab(id, "axys://tools".to_string());
+            new_tab(Some("axys://tools"));
         });
 
         window.add_action(&action);
@@ -1080,20 +1159,28 @@ fn build_browser_window(
     {
         let new_tab = new_tab.clone();
 
-        let navigate_tab = navigate_tab.clone();
-
-        let action = gio::SimpleAction::new("settings", None);
+        let action = gio::SimpleAction::new("downloads", None);
 
         action.connect_activate(move |_, _| {
-            let id = new_tab();
-
-            navigate_tab(id, "axys://settings".to_string());
+            new_tab(Some("axys://downloads"));
         });
 
         window.add_action(&action);
     }
 
-    let first_tab = new_tab();
+    {
+        let new_tab = new_tab.clone();
+
+        let action = gio::SimpleAction::new("settings", None);
+
+        action.connect_activate(move |_, _| {
+            new_tab(Some("axys://settings"));
+        });
+
+        window.add_action(&action);
+    }
+
+    let first_tab = new_tab(None);
 
     active_id.set(first_tab);
 

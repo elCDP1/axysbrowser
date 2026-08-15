@@ -1,4 +1,5 @@
 pub mod about;
+pub mod downloads;
 pub mod newtab;
 pub mod privacy;
 pub mod settings;

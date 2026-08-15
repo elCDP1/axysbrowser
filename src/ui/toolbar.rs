@@ -1,6 +1,7 @@
 use gtk::prelude::*;
 use gtk::{
-    Box, Button, CenterBox, Entry, EventControllerFocus, Image, Orientation, Spinner, Stack,
+    Align, Box, Button, CenterBox, Entry, EventControllerFocus, Image, MenuButton, Orientation,
+    Popover, Spinner, Stack,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -8,7 +9,9 @@ use webkit6::{WebView, prelude::WebViewExt};
 
 use super::menu::build_menu;
 use crate::app_state::AppState;
+use crate::browser::downloads::DownloadStatus;
 use crate::browser::engine::BrowserEngine;
+use crate::internal::pages::downloads::build_row;
 
 pub struct Toolbar {
     pub root: CenterBox,
@@ -18,6 +21,11 @@ pub struct Toolbar {
     back: Button,
     forward: Button,
     extensions: Button,
+    // Keeps the downloads-list subscription closure alive for the lifetime
+    // of this toolbar (the toolbar itself lives as long as the window).
+    // The button/popover widgets stay alive via the widget tree, so they
+    // don't need their own struct fields.
+    _downloads_refresh: Rc<dyn Fn()>,
 }
 
 impl Toolbar {
@@ -140,6 +148,35 @@ impl Toolbar {
 
         let right = Box::new(Orientation::Horizontal, 2);
 
+        // Hidden until the user has downloaded at least one thing this
+        // session, so it doesn't clutter the toolbar for people who never
+        // download anything. Clicking it opens a quick popover with recent
+        // downloads (like Chromium's toolbar download icon) instead of
+        // navigating away from the current page.
+        let downloads_popover = Popover::new();
+
+        downloads_popover.set_has_arrow(true);
+
+        let downloads_content = Box::new(Orientation::Vertical, 8);
+
+        downloads_content.set_margin_top(10);
+        downloads_content.set_margin_bottom(10);
+        downloads_content.set_margin_start(10);
+        downloads_content.set_margin_end(10);
+        downloads_content.set_size_request(280, -1);
+
+        downloads_popover.set_child(Some(&downloads_content));
+
+        let downloads = MenuButton::builder()
+            .icon_name("folder-download-symbolic")
+            .tooltip_text("Downloads")
+            .popover(&downloads_popover)
+            .build();
+
+        downloads.add_css_class("flat");
+
+        downloads.set_visible(false);
+
         let extensions = Button::builder()
             .icon_name("list-add-symbolic")
             .tooltip_text("Extensions")
@@ -153,6 +190,7 @@ impl Toolbar {
 
         menu.add_css_class("flat");
 
+        right.append(&downloads);
         right.append(&extensions);
         right.append(&menu);
 
@@ -162,6 +200,73 @@ impl Toolbar {
 
         toolbar.set_end_widget(Some(&right));
 
+        let downloads_refresh: Rc<dyn Fn()> = {
+            let downloads_button = downloads.clone();
+
+            let downloads_content = downloads_content.clone();
+
+            let downloads_popover = downloads_popover.clone();
+
+            let manager = state.downloads.clone();
+
+            let on_navigate = on_navigate.clone();
+
+            Rc::new(move || {
+                let entries = manager.entries();
+
+                let active = entries
+                    .iter()
+                    .filter(|entry| entry.status == DownloadStatus::InProgress)
+                    .count();
+
+                downloads_button.set_visible(!entries.is_empty());
+
+                let tooltip = if active > 0 {
+                    format!("Downloads ({active} active)")
+                } else {
+                    "Downloads".to_string()
+                };
+
+                downloads_button.set_tooltip_text(Some(&tooltip));
+
+                while let Some(child) = downloads_content.first_child() {
+                    downloads_content.remove(&child);
+                }
+
+                let title = gtk::Label::new(Some("Downloads"));
+                title.add_css_class("title-4");
+                title.set_halign(Align::Start);
+                downloads_content.append(&title);
+
+                // Only the 5 most recent downloads in the quick popover;
+                // the full history lives on the axys://downloads page.
+                for entry in entries.iter().rev().take(5) {
+                    downloads_content.append(&build_row(entry, &manager));
+                }
+
+                let see_all = Button::with_label("See all downloads");
+                see_all.add_css_class("flat");
+                see_all.set_halign(Align::Fill);
+
+                {
+                    let on_navigate = on_navigate.clone();
+                    let downloads_popover = downloads_popover.clone();
+
+                    see_all.connect_clicked(move |_| {
+                        downloads_popover.popdown();
+
+                        on_navigate("axys://downloads".to_string());
+                    });
+                }
+
+                downloads_content.append(&see_all);
+            })
+        };
+
+        downloads_refresh();
+
+        state.downloads.subscribe(&downloads_refresh);
+
         Self {
             root: toolbar,
             address,
@@ -170,6 +275,7 @@ impl Toolbar {
             back,
             forward,
             extensions,
+            _downloads_refresh: downloads_refresh,
         }
     }
 

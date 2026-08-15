@@ -138,13 +138,69 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
 
     search_note.set_halign(gtk::Align::Start);
 
+    let privacy_title = Label::new(Some("Privacy & Security"));
+
+    privacy_title.add_css_class("title-3");
+
+    privacy_title.set_halign(gtk::Align::Start);
+
+    let tracking_row = row(
+        "Tracking prevention",
+        "Use WebKit Intelligent Tracking Prevention for the shared browser session.",
+    );
+
+    let tracking_switch = Switch::new();
+
+    tracking_switch.set_active(state.settings.borrow().tracking_prevention);
+
+    tracking_row.append(&tracking_switch);
+
+    {
+        let state = state.clone();
+
+        tracking_switch.connect_active_notify(move |switch| {
+            state.set_tracking_prevention(switch.is_active());
+        });
+    }
+
+    let developer_row = row(
+        "Developer tools",
+        "Enable WebKit developer tools for newly created tabs.",
+    );
+
+    let developer_switch = Switch::new();
+
+    developer_switch.set_active(state.settings.borrow().developer_tools);
+
+    developer_row.append(&developer_switch);
+
+    {
+        let state = state.clone();
+
+        developer_switch.connect_active_notify(move |switch| {
+            state.set_developer_tools(switch.is_active());
+        });
+    }
+
     page.append(&title);
+
     page.append(&appearance_title);
+
     page.append(&appearance);
+
     page.append(&extensions_row);
+
     page.append(&search_title);
+
     page.append(&search);
+
     page.append(&search_note);
+
+    page.append(&privacy_title);
+
+    page.append(&tracking_row);
+
+    page.append(&developer_row);
 
     page
 }
