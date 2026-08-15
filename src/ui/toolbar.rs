@@ -12,8 +12,9 @@ use super::menu::{build_menu, build_menu_model};
 use crate::app_state::AppState;
 use crate::browser::bookmarks::Bookmark;
 use crate::browser::downloads::DownloadStatus;
-use crate::browser::engine::BrowserEngine;
 use crate::internal::pages::downloads::build_row;
+
+type Action = Rc<dyn Fn()>;
 
 fn bookmark_dialog(
     parent: &gtk::Widget,
@@ -175,19 +176,17 @@ pub struct Toolbar {
     spinner: Spinner,
     back: Button,
     forward: Button,
-    reload: Button,
     extensions: Button,
     bookmark: Button,
-    menu: MenuButton,
-    downloads: MenuButton,
-    _downloads_refresh: Rc<dyn Fn()>,
+    _downloads_refresh: Action,
+    _language_refresh: Action,
 }
 
 impl Toolbar {
     pub fn new(
         current_web_view: Rc<RefCell<Option<WebView>>>,
         on_navigate: Rc<dyn Fn(String)>,
-        on_reload: Rc<dyn Fn()>,
+        on_reload: Action,
         state: Rc<AppState>,
     ) -> Self {
         let toolbar = CenterBox::new();
@@ -210,11 +209,9 @@ impl Toolbar {
             .build();
 
         let reload_stack = Stack::new();
-
         reload_stack.set_transition_type(gtk::StackTransitionType::None);
 
         let reload_image = Image::from_icon_name("view-refresh-symbolic");
-
         reload_image.set_pixel_size(16);
 
         let reload = Button::builder()
@@ -225,9 +222,7 @@ impl Toolbar {
         spinner.set_size_request(16, 16);
 
         reload_stack.add_named(&reload_image, Some("reload"));
-
         reload_stack.add_named(&spinner, Some("loading"));
-
         reload_stack.set_visible_child_name("reload");
 
         reload.set_child(Some(&reload_stack));
@@ -237,21 +232,25 @@ impl Toolbar {
         reload.add_css_class("flat");
 
         {
-            let current = current_web_view.clone();
+            let current_web_view = current_web_view.clone();
 
             back.connect_clicked(move |_| {
-                if let Some(view) = current.borrow().as_ref() {
-                    BrowserEngine::back(view);
+                if let Some(view) = current_web_view.borrow().as_ref()
+                    && view.can_go_back()
+                {
+                    view.go_back();
                 }
             });
         }
 
         {
-            let current = current_web_view.clone();
+            let current_web_view = current_web_view.clone();
 
             forward.connect_clicked(move |_| {
-                if let Some(view) = current.borrow().as_ref() {
-                    BrowserEngine::forward(view);
+                if let Some(view) = current_web_view.borrow().as_ref()
+                    && view.can_go_forward()
+                {
+                    view.go_forward();
                 }
             });
         }
@@ -285,7 +284,31 @@ impl Toolbar {
             let address = address.clone();
 
             focus_controller.connect_enter(move |_| {
-                address.grab_focus();
+                let text = address.text().to_string();
+
+                if text.starts_with("axys://") {
+                    address.set_text("");
+                }
+
+                address.select_region(0, -1);
+            });
+        }
+
+        {
+            let address = address.clone();
+
+            address.connect_has_focus_notify(move |entry| {
+                if !entry.has_focus() {
+                    return;
+                }
+
+                let text = entry.text().to_string();
+
+                if text.starts_with("axys://") {
+                    entry.set_text("");
+                }
+
+                entry.select_region(0, -1);
             });
         }
 
@@ -300,7 +323,7 @@ impl Toolbar {
 
         bookmark.add_css_class("flat");
 
-        let bookmark_refresh: Rc<dyn Fn()> = {
+        let bookmark_refresh: Action = {
             let bookmark = bookmark.clone();
 
             let current_web_view = current_web_view.clone();
@@ -313,11 +336,15 @@ impl Toolbar {
                 let Some(view) = current_web_view_ref.as_ref() else {
                     bookmark.set_icon_name("non-starred-symbolic");
 
+                    bookmark.set_tooltip_text(Some(rust_i18n::t!("bookmarks.add").as_ref()));
+
                     return;
                 };
 
                 let Some(uri) = view.uri().map(|uri| uri.to_string()) else {
                     bookmark.set_icon_name("non-starred-symbolic");
+
+                    bookmark.set_tooltip_text(Some(rust_i18n::t!("bookmarks.add").as_ref()));
 
                     return;
                 };
@@ -338,11 +365,8 @@ impl Toolbar {
 
         {
             let state = state.clone();
-
             let current_web_view = current_web_view.clone();
-
             let parent = toolbar.clone();
-
             let refresh_star = bookmark_refresh.clone();
 
             bookmark.connect_clicked(move |_| {
@@ -385,13 +409,9 @@ impl Toolbar {
         let downloads_content = Box::new(Orientation::Vertical, 8);
 
         downloads_content.set_margin_top(10);
-
         downloads_content.set_margin_bottom(10);
-
         downloads_content.set_margin_start(10);
-
         downloads_content.set_margin_end(10);
-
         downloads_content.set_size_request(280, -1);
 
         downloads_popover.set_child(Some(&downloads_content));
@@ -403,7 +423,6 @@ impl Toolbar {
             .build();
 
         downloads.add_css_class("flat");
-
         downloads.set_visible(false);
 
         let extensions = Button::builder()
@@ -416,24 +435,18 @@ impl Toolbar {
         extensions.set_visible(state.settings.borrow().show_extensions);
 
         let menu = build_menu();
-
         menu.add_css_class("flat");
 
         right.append(&bookmark);
-
         right.append(&downloads);
-
         right.append(&extensions);
-
         right.append(&menu);
 
         toolbar.set_start_widget(Some(&navigation));
-
         toolbar.set_center_widget(Some(&address));
-
         toolbar.set_end_widget(Some(&right));
 
-        let downloads_refresh: Rc<dyn Fn()> = {
+        let downloads_refresh: Action = {
             let downloads_button = downloads.clone();
 
             let downloads_content = downloads_content.clone();
@@ -455,7 +468,7 @@ impl Toolbar {
                 downloads_button.set_visible(!entries.is_empty());
 
                 let tooltip = if active > 0 {
-                    format!("{} ({active} active)", rust_i18n::t!("app.downloads"))
+                    format!("{} ({active} active)", rust_i18n::t!("app.downloads"),)
                 } else {
                     rust_i18n::t!("app.downloads").to_string()
                 };
@@ -506,6 +519,50 @@ impl Toolbar {
 
         bookmark_refresh();
 
+        let language_refresh: Action = {
+            let back = back.clone();
+
+            let forward = forward.clone();
+
+            let reload = reload.clone();
+
+            let address = address.clone();
+
+            let extensions = extensions.clone();
+
+            let downloads = downloads.clone();
+
+            let menu = menu.clone();
+
+            let downloads_refresh = downloads_refresh.clone();
+
+            let bookmark_refresh = bookmark_refresh.clone();
+
+            Rc::new(move || {
+                back.set_tooltip_text(Some(rust_i18n::t!("app.back").as_ref()));
+
+                forward.set_tooltip_text(Some(rust_i18n::t!("app.forward").as_ref()));
+
+                reload.set_tooltip_text(Some(rust_i18n::t!("app.reload").as_ref()));
+
+                address.set_placeholder_text(Some(rust_i18n::t!("app.enter_url").as_ref()));
+
+                extensions.set_tooltip_text(Some(rust_i18n::t!("app.extensions").as_ref()));
+
+                downloads.set_tooltip_text(Some(rust_i18n::t!("app.downloads").as_ref()));
+
+                bookmark_refresh();
+
+                menu.set_tooltip_text(Some(rust_i18n::t!("app.menu").as_ref()));
+
+                menu.set_menu_model(Some(&build_menu_model()));
+
+                downloads_refresh();
+            })
+        };
+
+        state.subscribe_language(&language_refresh);
+
         Self {
             root: toolbar,
             address,
@@ -513,12 +570,10 @@ impl Toolbar {
             spinner,
             back,
             forward,
-            reload,
             extensions,
             bookmark,
-            menu,
-            downloads,
             _downloads_refresh: downloads_refresh,
+            _language_refresh: language_refresh,
         }
     }
 
@@ -546,35 +601,5 @@ impl Toolbar {
 
     pub fn activate_bookmark(&self) {
         self.bookmark.emit_clicked();
-    }
-
-    pub fn refresh_language(&self) {
-        self.back
-            .set_tooltip_text(Some(rust_i18n::t!("app.back").as_ref()));
-
-        self.forward
-            .set_tooltip_text(Some(rust_i18n::t!("app.forward").as_ref()));
-
-        self.reload
-            .set_tooltip_text(Some(rust_i18n::t!("app.reload").as_ref()));
-
-        self.address
-            .set_placeholder_text(Some(rust_i18n::t!("app.enter_url").as_ref()));
-
-        self.extensions
-            .set_tooltip_text(Some(rust_i18n::t!("app.extensions").as_ref()));
-
-        self.downloads
-            .set_tooltip_text(Some(rust_i18n::t!("app.downloads").as_ref()));
-
-        self.bookmark
-            .set_tooltip_text(Some(rust_i18n::t!("bookmarks.add").as_ref()));
-
-        self.menu
-            .set_tooltip_text(Some(rust_i18n::t!("app.menu").as_ref()));
-
-        self.menu.set_menu_model(Some(&build_menu_model()));
-
-        (self._downloads_refresh)();
     }
 }

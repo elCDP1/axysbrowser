@@ -3,6 +3,10 @@ pub fn stylesheet(dark: bool) -> String {
 
     let dim_alpha = if dark { "0.62" } else { "0.92" };
 
+    let border_alpha = if dark { "0.10" } else { "0.15" };
+
+    let subtle_border_alpha = if dark { "0.08" } else { "0.13" };
+
     format!(
         r#"
         {palette}
@@ -34,12 +38,6 @@ pub fn stylesheet(dark: bool) -> String {
             color: @axys_fg;
         }}
 
-        /*
-         * GtkMenuButton / GtkPopover / GtkDropDown popup.
-         * These surfaces live in their own popup hierarchy, so they
-         * must explicitly use Axys' palette instead of inheriting the
-         * system dark theme.
-         */
         popover,
         popover.background,
         popover > contents,
@@ -89,7 +87,7 @@ pub fn stylesheet(dark: bool) -> String {
         dropdown {{
             color: @axys_fg;
             background-color: alpha(@axys_fg, 0.045);
-            border: 1px solid alpha(@axys_fg, 0.10);
+            border: 1px solid alpha(@axys_fg, {border_alpha});
             border-radius: 9px;
         }}
 
@@ -110,7 +108,7 @@ pub fn stylesheet(dark: bool) -> String {
             min-height: 18px;
             padding: 5px 12px;
             border-radius: 16px;
-            border: 1px solid alpha(@axys_fg, 0.08);
+            border: 1px solid alpha(@axys_fg, {subtle_border_alpha});
             background: alpha(@axys_fg, 0.045);
             box-shadow: none;
             font-size: 0.90em;
@@ -126,7 +124,7 @@ pub fn stylesheet(dark: bool) -> String {
             min-height: 34px;
             padding: 10px 16px;
             border-radius: 18px;
-            border: 1px solid alpha(@axys_fg, 0.10);
+            border: 1px solid alpha(@axys_fg, {border_alpha});
             background: alpha(@axys_fg, 0.055);
             box-shadow: none;
             font-size: 0.92em;
@@ -230,6 +228,7 @@ pub fn stylesheet(dark: bool) -> String {
             border-radius: 9px;
             background-color: alpha(@axys_fg, 0.045);
             color: @axys_fg;
+            border: 1px solid alpha(@axys_fg, {subtle_border_alpha});
         }}
 
         .bookmark-button:hover {{
@@ -249,6 +248,7 @@ pub fn stylesheet(dark: bool) -> String {
             border-radius: 9px;
             background-color: alpha(@axys_fg, 0.045);
             color: @axys_fg;
+            border: 1px solid alpha(@axys_fg, {subtle_border_alpha});
         }}
 
         .bookmark-overflow:hover {{

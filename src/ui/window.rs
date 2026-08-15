@@ -128,17 +128,11 @@ fn build_browser_window(
 
     let select_tab: Rc<dyn Fn(usize)> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let current_web_view = current_web_view.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move |id| {
@@ -189,19 +183,12 @@ fn build_browser_window(
 
     let close_tab: Rc<dyn Fn(usize)> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let current_web_view = current_web_view.clone();
-
         let select_tab = select_tab.clone();
-
         let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move |id| {
@@ -288,17 +275,11 @@ fn build_browser_window(
 
     let navigate_tab: Rc<dyn Fn(usize, String)> = {
         let tabs = tabs.clone();
-
         let top_stack = top_stack.clone();
-
         let active_id = active_id.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let bookmark_bar_slot = bookmark_bar_slot.clone();
-
         let search = search.clone();
 
         Rc::new(move |id, input| {
@@ -402,15 +383,10 @@ fn build_browser_window(
 
     let go_back: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move || {
@@ -481,15 +457,10 @@ fn build_browser_window(
 
     let go_forward: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move || {
@@ -560,13 +531,9 @@ fn build_browser_window(
 
     let new_tab: NewTabCallback = {
         let tabs = tabs.clone();
-
         let next_id = next_id.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let current_web_view = current_web_view.clone();
 
         let tabbar_slot = Rc::downgrade(&tabbar_slot);
@@ -589,13 +556,9 @@ fn build_browser_window(
             let content = Stack::new();
 
             content.set_hexpand(true);
-
             content.set_vexpand(true);
-
             content.set_halign(gtk::Align::Fill);
-
             content.set_valign(gtk::Align::Fill);
-
             content.set_transition_type(StackTransitionType::None);
 
             let web_view = WebView::builder().network_session(&session).build();
@@ -654,6 +617,22 @@ fn build_browser_window(
                 })
             };
 
+            let local_history = {
+                let navigate_tab = navigate_tab.clone();
+
+                Rc::new(move || {
+                    navigate_tab(id, "axys://history".to_string());
+                })
+            };
+
+            let local_clear_browsing_data = {
+                let state = state.clone();
+
+                Rc::new(move || {
+                    state.history.clear();
+                })
+            };
+
             for uri in [
                 "axys://welcome",
                 "axys://newtab",
@@ -670,6 +649,8 @@ fn build_browser_window(
                     local_about.clone(),
                     local_extensions_changed.clone(),
                     local_downloads.clone(),
+                    local_history.clone(),
+                    local_clear_browsing_data.clone(),
                     state.clone(),
                 ) && let Some(name) = router::page_name(uri)
                 {
@@ -1010,10 +991,6 @@ fn build_browser_window(
         let state = state.clone();
 
         Rc::new(move || {
-            if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
-                toolbar.refresh_language();
-            }
-
             let tab_data = {
                 let tabs_ref = tabs.borrow();
 
@@ -1062,6 +1039,22 @@ fn build_browser_window(
                     })
                 };
 
+                let local_history = {
+                    let navigate_tab = navigate_tab.clone();
+
+                    Rc::new(move || {
+                        navigate_tab(id, "axys://history".to_string());
+                    })
+                };
+
+                let local_clear_browsing_data = {
+                    let state = state.clone();
+
+                    Rc::new(move || {
+                        state.history.clear();
+                    })
+                };
+
                 for page_uri in [
                     "axys://welcome",
                     "axys://newtab",
@@ -1082,6 +1075,8 @@ fn build_browser_window(
                         local_about.clone(),
                         local_extensions_changed.clone(),
                         local_downloads.clone(),
+                        local_history.clone(),
+                        local_clear_browsing_data.clone(),
                         state.clone(),
                     ) else {
                         continue;
@@ -1204,6 +1199,10 @@ fn build_browser_window(
                         'l' => {
                             if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
                                 toolbar.address.grab_focus();
+
+                                if toolbar.address.text().starts_with("axys://") {
+                                    toolbar.address.set_text("");
+                                }
 
                                 toolbar.address.select_region(0, -1);
                             }
