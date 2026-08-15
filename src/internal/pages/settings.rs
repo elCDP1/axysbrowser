@@ -41,21 +41,25 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
     page.set_margin_end(28);
 
     page.set_vexpand(true);
+
     page.set_hexpand(true);
 
-    let title = Label::new(Some("Settings"));
+    let title = Label::new(Some(&rust_i18n::t!("settings.title")));
 
     title.add_css_class("title-1");
 
     title.set_halign(gtk::Align::Start);
 
-    let appearance_title = Label::new(Some("Appearance"));
+    let appearance_title = Label::new(Some(&rust_i18n::t!("settings.appearance")));
 
     appearance_title.add_css_class("title-3");
 
     appearance_title.set_halign(gtk::Align::Start);
 
-    let appearance = DropDown::from_strings(&["Dark", "Light"]);
+    let appearance = DropDown::from_strings(&[
+        &rust_i18n::t!("settings.dark"),
+        &rust_i18n::t!("settings.light"),
+    ]);
 
     let dark = state.settings.borrow().dark_mode;
 
@@ -72,8 +76,8 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
     }
 
     let extensions_row = row(
-        "Show extensions",
-        "Show the extensions area in the browser toolbar.",
+        &rust_i18n::t!("settings.extensions"),
+        &rust_i18n::t!("settings.extensions_description"),
     );
 
     let extensions_switch = Switch::new();
@@ -96,7 +100,7 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
         });
     }
 
-    let search_title = Label::new(Some("Search"));
+    let search_title = Label::new(Some(&rust_i18n::t!("settings.search")));
 
     search_title.add_css_class("title-3");
 
@@ -130,23 +134,21 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
         });
     }
 
-    let search_note = Label::new(Some(
-        "Changes apply immediately. Brave Search is the default.",
-    ));
+    let search_note = Label::new(Some(&rust_i18n::t!("settings.search_note")));
 
     search_note.add_css_class("dim-label");
 
     search_note.set_halign(gtk::Align::Start);
 
-    let privacy_title = Label::new(Some("Privacy & Security"));
+    let privacy_title = Label::new(Some(&rust_i18n::t!("settings.privacy_security")));
 
     privacy_title.add_css_class("title-3");
 
     privacy_title.set_halign(gtk::Align::Start);
 
     let tracking_row = row(
-        "Tracking prevention",
-        "Use WebKit Intelligent Tracking Prevention for the shared browser session.",
+        &rust_i18n::t!("settings.tracking_prevention"),
+        &rust_i18n::t!("settings.tracking_description"),
     );
 
     let tracking_switch = Switch::new();
@@ -164,8 +166,8 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
     }
 
     let developer_row = row(
-        "Developer tools",
-        "Enable WebKit developer tools for newly created tabs.",
+        &rust_i18n::t!("settings.developer_tools"),
+        &rust_i18n::t!("settings.developer_description"),
     );
 
     let developer_switch = Switch::new();
@@ -179,6 +181,40 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
 
         developer_switch.connect_active_notify(move |switch| {
             state.set_developer_tools(switch.is_active());
+        });
+    }
+
+    let language_title = Label::new(Some(&rust_i18n::t!("settings.language")));
+
+    language_title.add_css_class("title-3");
+
+    language_title.set_halign(gtk::Align::Start);
+
+    let english_label = rust_i18n::t!("settings.english");
+
+    let spanish_label = rust_i18n::t!("settings.spanish");
+
+    let language = DropDown::from_strings(&[english_label.as_ref(), spanish_label.as_ref()]);
+
+    let selected_language = match state.settings.borrow().language.as_str() {
+        "es" => 1,
+        _ => 0,
+    };
+
+    language.set_selected(selected_language);
+
+    language.set_halign(gtk::Align::Start);
+
+    {
+        let state = state.clone();
+
+        language.connect_selected_notify(move |dropdown| {
+            let locale = match dropdown.selected() {
+                1 => "es",
+                _ => "en",
+            };
+
+            state.set_language(locale);
         });
     }
 
@@ -201,6 +237,10 @@ pub fn build_settings(state: Rc<AppState>, on_extensions_changed: Rc<dyn Fn(bool
     page.append(&tracking_row);
 
     page.append(&developer_row);
+
+    page.append(&language_title);
+
+    page.append(&language);
 
     page
 }

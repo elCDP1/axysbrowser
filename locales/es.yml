@@ -1,0 +1,61 @@
+app:
+  new_tab: "Nueva pestaña"
+  new_window: "Nueva ventana"
+  privacy_window: "Ventana privada"
+  settings: "Ajustes"
+  tools: "Herramientas"
+  downloads: "Descargas"
+  menu: "Menú"
+  back: "Atrás"
+  forward: "Adelante"
+  reload: "Recargar"
+  extensions: "Extensiones"
+  enter_url: "Introducir URL"
+  search_or_enter_url: "Buscar o introducir URL"
+
+settings:
+  title: "Ajustes"
+  appearance: "Apariencia"
+  theme: "Tema"
+  dark: "Oscuro"
+  light: "Claro"
+  language: "Idioma"
+  english: "Inglés"
+  spanish: "Español"
+  extensions: "Mostrar extensiones"
+  extensions_description: "Mostrar el área de extensiones en la barra del navegador."
+  search: "Búsqueda"
+  search_note: "Los cambios se aplican inmediatamente. Brave Search es el buscador predeterminado."
+  privacy_security: "Privacidad y seguridad"
+  tracking_prevention: "Prevención de seguimiento"
+  tracking_description: "Usar la prevención inteligente de seguimiento de WebKit para la navegación normal."
+  developer_tools: "Herramientas de desarrollo"
+  developer_description: "Activar las herramientas de desarrollo de WebKit para las pestañas nuevas."
+  language_note: "Los cambios se aplican a las nuevas páginas del navegador."
+
+downloads:
+  title: "Descargas"
+  empty: "Todavía no hay descargas."
+  completed: "Completada"
+  cancelled: "Cancelada"
+  cancel: "Cancelar"
+  failed: "Error: %{message}"
+  show_in_folder: "Mostrar en carpeta"
+  save_file: "Guardar archivo"
+  download_complete: "Descarga completada"
+  see_all: "Ver todas las descargas"
+
+tools:
+  title: "Herramientas"
+  web_inspector: "Inspector web"
+  browsing_data: "Datos de navegación"
+  clear_browsing_data: "Borrar datos de navegación"
+  open_downloads: "Descargas"
+
+privacy:
+  title: "Modo privado"
+  description: "Datos web temporales y una sesión de navegación aislada."
+  search: "Brave Search"
+
+menu:
+  navigation: "Navegación"

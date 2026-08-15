@@ -145,7 +145,6 @@ impl DownloadManager {
                         .build();
 
                     let manager = manager.clone();
-
                     let download = download.clone();
 
                     dialog.save(
@@ -176,16 +175,10 @@ impl DownloadManager {
 
                                 manager.notify();
 
-                                // WebKitGTK6 wants a plain absolute filesystem
-                                // path here, NOT a `file://` URI — passing a
-                                // URI trips a GLib assertion
-                                // (`g_path_is_absolute`) and silently breaks
-                                // the download.
                                 download.set_destination(path_str);
                             }
 
                             Err(_) => {
-                                // User cancelled the dialog (or it failed to open).
                                 download.cancel();
                             }
                         },

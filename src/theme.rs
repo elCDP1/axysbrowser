@@ -1,23 +1,8 @@
 //! Paleta de colores para axysBrowser.
-//!
-//! El objetivo de este módulo es que el aspecto claro/oscuro no dependa del
-//! tema GTK instalado en el sistema (que puede no definir bien los alias de
-//! color, o no aplicar correctamente la variante clara/oscura al fondo de la
-//! ventana ni a los popups). En su lugar, definimos explícitamente dos
-//! paletas propias con `@define-color` — incluyendo el fondo de la ventana
-//! y de los popovers/desplegables — y las usamos en todo el CSS
-//! personalizado. La estructura, el layout y el tamaño de los widgets no
-//! cambian entre temas: solo los colores.
 
-/// Devuelve la hoja de estilos GTK CSS completa para el tema pedido.
 pub fn stylesheet(dark: bool) -> String {
     let palette = if dark { DARK_PALETTE } else { LIGHT_PALETTE };
 
-    // El texto "dim" (subtítulos, etiquetas secundarias) se atenúa con
-    // opacidad sobre @axys_fg. En oscuro un 0.62 sobre blanco se sigue
-    // leyendo bien; en claro ese mismo 0.62 sobre negro da un gris que
-    // cuesta de leer, así que en claro usamos una opacidad mucho más alta
-    // para que el texto secundario siga siendo prácticamente negro.
     let dim_alpha = if dark { "0.62" } else { "0.92" };
 
     format!(
@@ -29,14 +14,6 @@ pub fn stylesheet(dark: bool) -> String {
             color: @axys_fg;
         }}
 
-        /* Some GTK style classes (title-1, dim-label, the theme's own
-           symbolic-icon tinting...) can define their own `color` with
-           higher specificity than the plain `window` selector above,
-           which is what made text and icons stay pale/low-contrast on
-           some pages instead of following our own palette. We set them
-           explicitly here so every page — not just the ones using our
-           custom `.address-top`/`.tab`/etc. classes — is guaranteed to
-           follow @axys_fg in both themes. */
         label {{
             color: @axys_fg;
         }}
@@ -45,13 +22,13 @@ pub fn stylesheet(dark: bool) -> String {
             color: alpha(@axys_fg, {dim_alpha});
         }}
 
-        .title-1, .title-2, .title-3, .title-4 {{
+        .title-1,
+        .title-2,
+        .title-3,
+        .title-4 {{
             color: @axys_fg;
         }}
 
-        /* Symbolic icons (back/forward/reload/menu/extensions/downloads...)
-           are tinted by the widget's `color` property. Without this, they
-           fell back to the system theme's own (broken) tint. */
         button,
         button image,
         button.flat,
@@ -59,20 +36,18 @@ pub fn stylesheet(dark: bool) -> String {
             color: @axys_fg;
         }}
 
-        /* Popovers (the ☰ menu, and the dropdown lists in Settings/Tools)
-           are separate top-level surfaces in GTK4, not children of
-           `window`, so they need their own explicit colors. GTK4 uses a
-           couple of different CSS node names for these depending on the
-           widget (`popover`, or a plain `window` with a `.popup` class for
-           some list-backed popups like GtkDropDown) — we cover every
-           variant here, plus a universal `*` selector inside them, so
-           nothing is left inheriting the system theme's own (broken)
-           dark/light colors regardless of which node type it turns out
-           to be. */
+        /*
+         * GtkMenuButton / GtkPopover / GtkDropDown popup.
+         * These surfaces live in their own popup hierarchy, so they
+         * must explicitly use Axys' palette instead of inheriting the
+         * system dark theme.
+         */
         popover,
+        popover.background,
         popover > contents,
         popover.menu,
-        popover.background,
+        popover.menu.contents,
+        popover contents,
         window.popup,
         window.popup > contents {{
             background-color: @axys_bg;
@@ -95,6 +70,7 @@ pub fn stylesheet(dark: bool) -> String {
         popover row,
         window.popup row {{
             background-color: transparent;
+            color: @axys_fg;
         }}
 
         popover modelbutton:hover,
@@ -102,10 +78,12 @@ pub fn stylesheet(dark: bool) -> String {
         popover row:hover,
         window.popup row:hover {{
             background-color: alpha(@axys_fg, 0.08);
+            color: @axys_fg;
         }}
 
         popover row:selected,
-        window.popup row:selected {{
+        window.popup row:selected,
+        popover modelbutton:selected {{
             background-color: alpha(@axys_accent, 0.18);
             color: @axys_fg;
         }}
@@ -117,7 +95,12 @@ pub fn stylesheet(dark: bool) -> String {
             border-radius: 9px;
         }}
 
-        dropdown:hover {{
+        dropdown > button {{
+            color: @axys_fg;
+            background-color: transparent;
+        }}
+
+        dropdown > button:hover {{
             background-color: alpha(@axys_fg, 0.07);
         }}
 
@@ -237,17 +220,12 @@ pub fn stylesheet(dark: bool) -> String {
     )
 }
 
-// Gris oscuro estándar de GNOME/Adwaita. Si tu sistema mostraba un tono
-// distinto antes de este cambio, dime el hexadecimal exacto y lo ajusto.
 const DARK_PALETTE: &str = r#"
     @define-color axys_bg #242424;
     @define-color axys_fg #e9ebec;
     @define-color axys_accent #4c8bf5;
 "#;
 
-// #e6e6e6 = rgb(230, 230, 230), como pediste (ni blanco puro ni el 220 más
-// oscuro que mencionaste como alternativa). Si lo quieres más oscuro,
-// dime el hex y lo cambio directamente aquí.
 const LIGHT_PALETTE: &str = r#"
     @define-color axys_bg #e6e6e6;
     @define-color axys_fg #000000;

@@ -12,41 +12,31 @@ use super::pages::{
 pub fn page_name(uri: &str) -> Option<&'static str> {
     match uri {
         "axys://" | "axys://newtab" => Some("newtab"),
-
         "axys://welcome" => Some("welcome"),
-
         "axys://privacy" => Some("privacy"),
-
         "axys://about" => Some("about"),
-
         "axys://settings" => Some("settings"),
-
         "axys://tools" => Some("tools"),
-
         "axys://downloads" => Some("downloads"),
-
         _ => None,
     }
 }
 
-/// Display title for an internal `axys://` page, used as the tab title
-/// since these pages aren't loaded in the `WebView` and never trigger its
-/// `title-notify` signal.
-pub fn page_title(uri: &str) -> &'static str {
+pub fn page_title(uri: &str) -> String {
     match uri {
-        "axys://welcome" => "Welcome",
+        "axys://welcome" => "Welcome".to_string(),
 
-        "axys://privacy" => "Privacy",
+        "axys://privacy" => rust_i18n::t!("privacy.title").to_string(),
 
-        "axys://about" => "About axysBrowser",
+        "axys://about" => "About axysBrowser".to_string(),
 
-        "axys://settings" => "Settings",
+        "axys://settings" => rust_i18n::t!("settings.title").to_string(),
 
-        "axys://tools" => "Tools",
+        "axys://tools" => rust_i18n::t!("tools.title").to_string(),
 
-        "axys://downloads" => "Downloads",
+        "axys://downloads" => rust_i18n::t!("downloads.title").to_string(),
 
-        _ => "New Tab",
+        _ => rust_i18n::t!("app.new_tab").to_string(),
     }
 }
 

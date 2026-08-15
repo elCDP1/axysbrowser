@@ -37,8 +37,6 @@ pub fn build_private_window(app: &Application, state: Rc<AppState>) {
 
     session.set_persistent_credential_storage_enabled(false);
 
-    // Private windows use their own ephemeral session, so downloads
-    // triggered there must be watched separately from the normal session.
     state.downloads.watch(&session);
 
     let mut private_search = state.search.borrow().clone();
@@ -71,11 +69,6 @@ fn build_browser_window(
         .resizable(true)
         .build();
 
-    // El CSS de los widgets personalizados (pestañas, barra de direcciones,
-    // logo, banner de privacidad...) vive en `state.css_provider` y ya trae
-    // cargada la paleta correspondiente al tema actual (ver `AppState::apply_theme`).
-    // Solo lo registramos una vez por display, para que cambiar el tema desde
-    // Ajustes actualice todas las ventanas abiertas sin duplicar el proveedor.
     if !state.css_installed.get()
         && let Some(display) = gdk::Display::default()
     {
@@ -94,7 +87,11 @@ fn build_browser_window(
     root.set_vexpand(true);
 
     if private_mode {
-        let banner = gtk::Label::new(Some("Privacy mode · temporary website data · Brave Search"));
+        let banner = gtk::Label::new(Some(&format!(
+            "{} · temporary website data · {}",
+            rust_i18n::t!("privacy.title"),
+            rust_i18n::t!("privacy.search"),
+        )));
 
         banner.add_css_class("private-banner");
 
@@ -128,15 +125,10 @@ fn build_browser_window(
 
     let select_tab: Rc<dyn Fn(usize)> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let current_web_view = current_web_view.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
 
         Rc::new(move |id| {
@@ -183,17 +175,11 @@ fn build_browser_window(
 
     let close_tab: Rc<dyn Fn(usize)> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let current_web_view = current_web_view.clone();
-
         let select_tab = select_tab.clone();
 
         Rc::new(move |id| {
@@ -205,7 +191,7 @@ fn build_browser_window(
                         return;
                     };
 
-                    tab.title = "New Tab".to_string();
+                    tab.title = rust_i18n::t!("app.new_tab").to_string();
 
                     tab.uri = "axys://newtab".to_string();
 
@@ -272,15 +258,10 @@ fn build_browser_window(
 
     let navigate_tab: Rc<dyn Fn(usize, String)> = {
         let tabs = tabs.clone();
-
         let top_stack = top_stack.clone();
-
         let active_id = active_id.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
-
         let search = search.clone();
 
         Rc::new(move |id, input| {
@@ -302,11 +283,7 @@ fn build_browser_window(
 
                     tab.uri = target.clone();
 
-                    // Internal axys:// pages aren't loaded in the WebView, so
-                    // its `title-notify` signal never fires for them — we
-                    // have to set the tab title ourselves here, or it just
-                    // keeps whatever title the tab had before.
-                    tab.title = router::page_title(&target).to_string();
+                    tab.title = router::page_title(&target);
 
                     tab.push_history(target.clone());
 
@@ -380,13 +357,9 @@ fn build_browser_window(
 
     let go_back: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
 
         Rc::new(move || {
@@ -409,7 +382,7 @@ fn build_browser_window(
             if router::page_name(&target).is_some()
                 && let Some(tab) = tabs.borrow_mut().iter_mut().find(|tab| tab.id == id)
             {
-                tab.title = router::page_title(&target).to_string();
+                tab.title = router::page_title(&target);
             }
 
             let tab_data = {
@@ -453,13 +426,9 @@ fn build_browser_window(
 
     let go_forward: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let toolbar_slot = toolbar_slot.clone();
-
         let tabbar_slot = tabbar_slot.clone();
 
         Rc::new(move || {
@@ -482,7 +451,7 @@ fn build_browser_window(
             if router::page_name(&target).is_some()
                 && let Some(tab) = tabs.borrow_mut().iter_mut().find(|tab| tab.id == id)
             {
-                tab.title = router::page_title(&target).to_string();
+                tab.title = router::page_title(&target);
             }
 
             let tab_data = {
@@ -526,23 +495,14 @@ fn build_browser_window(
 
     let new_tab: NewTabCallback = {
         let tabs = tabs.clone();
-
         let next_id = next_id.clone();
-
         let active_id = active_id.clone();
-
         let top_stack = top_stack.clone();
-
         let current_web_view = current_web_view.clone();
-
         let tabbar_slot = Rc::downgrade(&tabbar_slot);
-
         let toolbar_slot = Rc::downgrade(&toolbar_slot);
-
         let navigate_tab = navigate_tab.clone();
-
         let state = state.clone();
-
         let session = session.clone();
 
         Rc::new(move |starting_uri: Option<&str>| {
@@ -633,12 +593,6 @@ fn build_browser_window(
                 }
             }
 
-            // A tab can be created either at the default start page (new
-            // tab / privacy for private windows) or landing directly on a
-            // specific axys:// page (e.g. opening Settings from the menu).
-            // Landing directly avoids leaving a fake "New Tab" entry behind
-            // it in history, which used to make the back button look
-            // active even though there was nothing real to go back to.
             let first_uri = starting_uri.map(|uri| uri.to_string()).unwrap_or_else(|| {
                 if private_mode {
                     "axys://privacy".to_string()
@@ -659,7 +613,7 @@ fn build_browser_window(
 
             tab.uri = first_uri.clone();
 
-            tab.title = router::page_title(&first_uri).to_string();
+            tab.title = router::page_title(&first_uri);
 
             tab.history = vec![first_uri.clone()];
 
@@ -730,9 +684,9 @@ fn build_browser_window(
                         .filter(|title| !title.trim().is_empty())
                         .unwrap_or_else(|| {
                             if private_mode {
-                                "Privacy".to_string()
+                                rust_i18n::t!("privacy.title").to_string()
                             } else {
-                                "New Tab".to_string()
+                                rust_i18n::t!("app.new_tab").to_string()
                             }
                         });
 
@@ -858,6 +812,157 @@ fn build_browser_window(
     root.append(&top_stack);
 
     window.set_child(Some(&root));
+
+    let window_weak = window.downgrade();
+
+    let language_refresh: Rc<dyn Fn()> = {
+        let tabs = tabs.clone();
+
+        let active_id = active_id.clone();
+
+        let top_stack = top_stack.clone();
+
+        let toolbar_slot = toolbar_slot.clone();
+
+        let tabbar_slot = tabbar_slot.clone();
+
+        let navigate_tab = navigate_tab.clone();
+
+        let state = state.clone();
+
+        Rc::new(move || {
+            if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
+                toolbar.refresh_language();
+            }
+
+            let tab_data = {
+                let tabs_ref = tabs.borrow();
+
+                tabs_ref
+                    .iter()
+                    .map(|tab| (tab.id, tab.uri.clone(), tab.content.clone()))
+                    .collect::<Vec<_>>()
+            };
+
+            for (id, uri, content) in tab_data {
+                let Some(current_page) = router::page_name(&uri) else {
+                    continue;
+                };
+
+                let local_search = {
+                    let navigate_tab = navigate_tab.clone();
+
+                    Rc::new(move |input: String| {
+                        navigate_tab(id, input);
+                    })
+                };
+
+                let local_about = {
+                    let navigate_tab = navigate_tab.clone();
+
+                    Rc::new(move || {
+                        navigate_tab(id, "axys://about".to_string());
+                    })
+                };
+
+                let local_extensions_changed = {
+                    let toolbar_slot = toolbar_slot.clone();
+
+                    Rc::new(move |visible: bool| {
+                        if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
+                            toolbar.set_extensions_visible(visible);
+                        }
+                    })
+                };
+
+                let local_downloads = {
+                    let navigate_tab = navigate_tab.clone();
+
+                    Rc::new(move || {
+                        navigate_tab(id, "axys://downloads".to_string());
+                    })
+                };
+
+                for page_uri in [
+                    "axys://welcome",
+                    "axys://newtab",
+                    "axys://privacy",
+                    "axys://about",
+                    "axys://settings",
+                    "axys://tools",
+                    "axys://downloads",
+                ] {
+                    let Some(page_name) = router::page_name(page_uri) else {
+                        continue;
+                    };
+
+                    let Some(widget) = router::route(
+                        page_uri,
+                        local_search.clone(),
+                        local_about.clone(),
+                        local_extensions_changed.clone(),
+                        local_downloads.clone(),
+                        state.clone(),
+                    ) else {
+                        continue;
+                    };
+
+                    if let Some(old) = content.child_by_name(page_name) {
+                        content.remove(&old);
+                    }
+
+                    content.add_named(&widget, Some(page_name));
+                }
+
+                content.set_visible_child_name(current_page);
+
+                if let Some(tab) = tabs.borrow_mut().iter_mut().find(|tab| tab.id == id) {
+                    tab.title = router::page_title(&uri);
+                }
+            }
+
+            if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
+                tabbar.refresh(&tabs.borrow(), active_id.get());
+            }
+
+            if let Some(tab) = tabs.borrow().iter().find(|tab| tab.id == active_id.get()) {
+                top_stack.set_visible_child(&tab.content);
+
+                if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
+                    toolbar.address.set_text(&tab.uri);
+                }
+            }
+
+            if let Some(window) = window_weak.upgrade() {
+                if private_mode {
+                    let title = rust_i18n::t!("privacy.title").to_string();
+
+                    window.set_title(Some(&title));
+                } else {
+                    window.set_title(Some("axysBrowser"));
+                }
+            }
+        })
+    };
+
+    state.subscribe_language(&language_refresh);
+
+    /*
+     * Keep the language callback alive for the lifetime of the window.
+     *
+     * The signal closure is Fn, so it must not consume the Rc.
+     * Cloning it keeps the captured owner alive without introducing
+     * a reference cycle back into AppState.
+     */
+    {
+        let language_refresh = language_refresh.clone();
+
+        window.connect_close_request(move |_| {
+            let _keep_alive = language_refresh.clone();
+
+            Propagation::Proceed
+        });
+    }
 
     let keyboard = EventControllerKey::new();
 
@@ -1118,7 +1223,6 @@ fn build_browser_window(
 
     {
         let app = app.clone();
-
         let state = state.clone();
 
         let action = gio::SimpleAction::new("new-window", None);
@@ -1132,7 +1236,6 @@ fn build_browser_window(
 
     {
         let app = app.clone();
-
         let state = state.clone();
 
         let action = gio::SimpleAction::new("privacy", None);

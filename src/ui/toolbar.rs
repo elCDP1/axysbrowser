@@ -7,7 +7,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use webkit6::{WebView, prelude::WebViewExt};
 
-use super::menu::build_menu;
+use super::menu::{build_menu, build_menu_model};
 use crate::app_state::AppState;
 use crate::browser::downloads::DownloadStatus;
 use crate::browser::engine::BrowserEngine;
@@ -20,11 +20,10 @@ pub struct Toolbar {
     spinner: Spinner,
     back: Button,
     forward: Button,
+    reload: Button,
     extensions: Button,
-    // Keeps the downloads-list subscription closure alive for the lifetime
-    // of this toolbar (the toolbar itself lives as long as the window).
-    // The button/popover widgets stay alive via the widget tree, so they
-    // don't need their own struct fields.
+    menu: MenuButton,
+    downloads: MenuButton,
     _downloads_refresh: Rc<dyn Fn()>,
 }
 
@@ -45,12 +44,12 @@ impl Toolbar {
 
         let back = Button::builder()
             .icon_name("go-previous-symbolic")
-            .tooltip_text("Back")
+            .tooltip_text(rust_i18n::t!("app.back").as_ref())
             .build();
 
         let forward = Button::builder()
             .icon_name("go-next-symbolic")
-            .tooltip_text("Forward")
+            .tooltip_text(rust_i18n::t!("app.forward").as_ref())
             .build();
 
         let reload_stack = Stack::new();
@@ -61,7 +60,9 @@ impl Toolbar {
 
         reload_image.set_pixel_size(16);
 
-        let reload_button = Button::builder().tooltip_text("Reload").build();
+        let reload = Button::builder()
+            .tooltip_text(rust_i18n::t!("app.reload").as_ref())
+            .build();
 
         let spinner = Spinner::new();
 
@@ -73,11 +74,11 @@ impl Toolbar {
 
         reload_stack.set_visible_child_name("reload");
 
-        reload_button.set_child(Some(&reload_stack));
+        reload.set_child(Some(&reload_stack));
 
         back.add_css_class("flat");
         forward.add_css_class("flat");
-        reload_button.add_css_class("flat");
+        reload.add_css_class("flat");
 
         {
             let current = current_web_view.clone();
@@ -102,7 +103,7 @@ impl Toolbar {
         {
             let current = current_web_view.clone();
 
-            reload_button.connect_clicked(move |_| {
+            reload.connect_clicked(move |_| {
                 if let Some(view) = current.borrow().as_ref() {
                     if view.is_loading() {
                         view.stop_loading();
@@ -115,10 +116,10 @@ impl Toolbar {
 
         navigation.append(&back);
         navigation.append(&forward);
-        navigation.append(&reload_button);
+        navigation.append(&reload);
 
         let address = Entry::builder()
-            .placeholder_text("Enter URL")
+            .placeholder_text(rust_i18n::t!("app.enter_url").as_ref())
             .hexpand(true)
             .build();
 
@@ -148,11 +149,6 @@ impl Toolbar {
 
         let right = Box::new(Orientation::Horizontal, 2);
 
-        // Hidden until the user has downloaded at least one thing this
-        // session, so it doesn't clutter the toolbar for people who never
-        // download anything. Clicking it opens a quick popover with recent
-        // downloads (like Chromium's toolbar download icon) instead of
-        // navigating away from the current page.
         let downloads_popover = Popover::new();
 
         downloads_popover.set_has_arrow(true);
@@ -160,16 +156,20 @@ impl Toolbar {
         let downloads_content = Box::new(Orientation::Vertical, 8);
 
         downloads_content.set_margin_top(10);
+
         downloads_content.set_margin_bottom(10);
+
         downloads_content.set_margin_start(10);
+
         downloads_content.set_margin_end(10);
+
         downloads_content.set_size_request(280, -1);
 
         downloads_popover.set_child(Some(&downloads_content));
 
         let downloads = MenuButton::builder()
             .icon_name("folder-download-symbolic")
-            .tooltip_text("Downloads")
+            .tooltip_text(rust_i18n::t!("app.downloads").as_ref())
             .popover(&downloads_popover)
             .build();
 
@@ -179,7 +179,7 @@ impl Toolbar {
 
         let extensions = Button::builder()
             .icon_name("list-add-symbolic")
-            .tooltip_text("Extensions")
+            .tooltip_text(rust_i18n::t!("app.extensions").as_ref())
             .build();
 
         extensions.add_css_class("flat");
@@ -222,9 +222,9 @@ impl Toolbar {
                 downloads_button.set_visible(!entries.is_empty());
 
                 let tooltip = if active > 0 {
-                    format!("Downloads ({active} active)")
+                    format!("{} ({active} active)", rust_i18n::t!("app.downloads"))
                 } else {
-                    "Downloads".to_string()
+                    rust_i18n::t!("app.downloads").to_string()
                 };
 
                 downloads_button.set_tooltip_text(Some(&tooltip));
@@ -233,23 +233,27 @@ impl Toolbar {
                     downloads_content.remove(&child);
                 }
 
-                let title = gtk::Label::new(Some("Downloads"));
+                let title = gtk::Label::new(Some(&rust_i18n::t!("downloads.title")));
+
                 title.add_css_class("title-4");
+
                 title.set_halign(Align::Start);
+
                 downloads_content.append(&title);
 
-                // Only the 5 most recent downloads in the quick popover;
-                // the full history lives on the axys://downloads page.
                 for entry in entries.iter().rev().take(5) {
                     downloads_content.append(&build_row(entry, &manager));
                 }
 
-                let see_all = Button::with_label("See all downloads");
+                let see_all = Button::with_label(&rust_i18n::t!("downloads.see_all"));
+
                 see_all.add_css_class("flat");
+
                 see_all.set_halign(Align::Fill);
 
                 {
                     let on_navigate = on_navigate.clone();
+
                     let downloads_popover = downloads_popover.clone();
 
                     see_all.connect_clicked(move |_| {
@@ -274,7 +278,10 @@ impl Toolbar {
             spinner,
             back,
             forward,
+            reload,
             extensions,
+            menu,
+            downloads,
             _downloads_refresh: downloads_refresh,
         }
     }
@@ -299,5 +306,32 @@ impl Toolbar {
 
     pub fn set_extensions_visible(&self, visible: bool) {
         self.extensions.set_visible(visible);
+    }
+
+    pub fn refresh_language(&self) {
+        self.back
+            .set_tooltip_text(Some(rust_i18n::t!("app.back").as_ref()));
+
+        self.forward
+            .set_tooltip_text(Some(rust_i18n::t!("app.forward").as_ref()));
+
+        self.reload
+            .set_tooltip_text(Some(rust_i18n::t!("app.reload").as_ref()));
+
+        self.address
+            .set_placeholder_text(Some(rust_i18n::t!("app.enter_url").as_ref()));
+
+        self.extensions
+            .set_tooltip_text(Some(rust_i18n::t!("app.extensions").as_ref()));
+
+        self.downloads
+            .set_tooltip_text(Some(rust_i18n::t!("app.downloads").as_ref()));
+
+        self.menu
+            .set_tooltip_text(Some(rust_i18n::t!("app.menu").as_ref()));
+
+        self.menu.set_menu_model(Some(&build_menu_model()));
+
+        (self._downloads_refresh)();
     }
 }

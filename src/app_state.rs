@@ -1,5 +1,6 @@
 use crate::browser::address::{SearchConfig, load_config};
 use crate::browser::downloads::DownloadManager;
+use crate::i18n;
 use crate::theme;
 use gtk::Application;
 use gtk::CssProvider;
@@ -10,7 +11,7 @@ use std::cell::{Cell, RefCell};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use webkit6::NetworkSession;
 
 fn default_true() -> bool {
@@ -20,6 +21,13 @@ fn default_true() -> bool {
 fn default_search_engine() -> String {
     "brave".to_string()
 }
+
+fn default_language() -> String {
+    i18n::system_locale().to_string()
+}
+
+type LanguageListener = Weak<dyn Fn()>;
+type LanguageListeners = Rc<RefCell<Vec<LanguageListener>>>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UserSettings {
@@ -42,6 +50,9 @@ pub struct UserSettings {
     /// Applies immediately, including to already-open tabs.
     #[serde(default = "default_true")]
     pub tracking_prevention: bool,
+
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 impl Default for UserSettings {
@@ -52,6 +63,7 @@ impl Default for UserSettings {
             show_extensions: true,
             developer_tools: true,
             tracking_prevention: true,
+            language: default_language(),
         }
     }
 }
@@ -64,11 +76,17 @@ pub struct AppState {
     pub css_provider: CssProvider,
     pub css_installed: Rc<Cell<bool>>,
     pub downloads: DownloadManager,
+    language_listeners: LanguageListeners,
 }
 
 impl AppState {
     pub fn load(application: &Application) -> Rc<Self> {
         let mut settings = Self::load_user_settings();
+
+        settings.language = i18n::normalize_locale(&settings.language).to_string();
+
+        i18n::set_locale(&settings.language);
+
         let mut search = load_config();
 
         if !search.engines.contains_key(&settings.search_engine) {
@@ -94,6 +112,7 @@ impl AppState {
             css_provider: CssProvider::new(),
             css_installed: Rc::new(Cell::new(false)),
             downloads,
+            language_listeners: Rc::new(RefCell::new(Vec::new())),
         });
 
         state.apply_theme();
@@ -123,7 +142,11 @@ impl AppState {
             return UserSettings::default();
         };
 
-        toml::from_str(&text).unwrap_or_default()
+        let mut settings: UserSettings = toml::from_str(&text).unwrap_or_default();
+
+        settings.language = i18n::normalize_locale(&settings.language).to_string();
+
+        settings
     }
 
     pub fn save(&self) {
@@ -140,11 +163,6 @@ impl AppState {
         }
     }
 
-    /// Aplica el tema actual: ajusta la preferencia oscura de GTK para los
-    /// widgets nativos (botones, ventana, scrollbars...) y recarga la hoja
-    /// de estilos personalizada (pestañas, barra de direcciones, logo...)
-    /// con la paleta correspondiente. Al usar un único `CssProvider`
-    /// compartido, todas las ventanas abiertas se actualizan al instante.
     pub fn apply_theme(&self) {
         let dark = self.settings.borrow().dark_mode;
 
@@ -153,6 +171,28 @@ impl AppState {
         }
 
         self.css_provider.load_from_data(&theme::stylesheet(dark));
+    }
+
+    pub fn subscribe_language(&self, callback: &Rc<dyn Fn()>) {
+        self.language_listeners
+            .borrow_mut()
+            .push(Rc::downgrade(callback));
+    }
+
+    fn notify_language_changed(&self) {
+        let mut listeners = self.language_listeners.borrow_mut();
+
+        listeners.retain(|listener| listener.strong_count() > 0);
+
+        let active_listeners = listeners.clone();
+
+        drop(listeners);
+
+        for listener in active_listeners {
+            if let Some(callback) = listener.upgrade() {
+                callback();
+            }
+        }
     }
 
     pub fn set_search_engine(&self, engine: &str) {
@@ -171,6 +211,7 @@ impl AppState {
         self.settings.borrow_mut().dark_mode = dark;
 
         self.apply_theme();
+
         self.save();
     }
 
@@ -180,20 +221,33 @@ impl AppState {
         self.save();
     }
 
-    /// Solo afecta a pestañas creadas después del cambio (ver `BrowserEngine::configure`).
     pub fn set_developer_tools(&self, enabled: bool) {
         self.settings.borrow_mut().developer_tools = enabled;
 
         self.save();
     }
 
-    /// Aplica de inmediato: actúa sobre la sesión de red compartida, no sobre
-    /// cada `WebView` individualmente, así que afecta también a pestañas ya abiertas.
     pub fn set_tracking_prevention(&self, enabled: bool) {
         self.settings.borrow_mut().tracking_prevention = enabled;
 
         self.network_session.set_itp_enabled(enabled);
 
         self.save();
+    }
+
+    pub fn set_language(&self, language: &str) {
+        let language = i18n::normalize_locale(language);
+
+        if self.settings.borrow().language == language {
+            return;
+        }
+
+        i18n::set_locale(language);
+
+        self.settings.borrow_mut().language = language.to_string();
+
+        self.save();
+
+        self.notify_language_changed();
     }
 }
