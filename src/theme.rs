@@ -1,5 +1,3 @@
-//! Paleta de colores para axysBrowser.
-
 pub fn stylesheet(dark: bool) -> String {
     let palette = if dark { DARK_PALETTE } else { LIGHT_PALETTE };
 
@@ -215,6 +213,59 @@ pub fn stylesheet(dark: bool) -> String {
             border-radius: 12px;
             background: alpha(@axys_accent, 0.10);
             color: @axys_fg;
+        }}
+
+        .bookmark-bar {{
+            padding: 4px 8px;
+            margin: 0;
+            min-height: 30px;
+            border-spacing: 4px;
+        }}
+
+        .bookmark-button {{
+            min-height: 26px;
+            min-width: 0;
+            padding: 4px 10px;
+            margin: 2px 3px;
+            border-radius: 9px;
+            background-color: alpha(@axys_fg, 0.045);
+            color: @axys_fg;
+        }}
+
+        .bookmark-button:hover {{
+            background-color: alpha(@axys_fg, 0.08);
+            border-radius: 9px;
+        }}
+
+        .bookmark-button:active {{
+            background-color: alpha(@axys_fg, 0.12);
+        }}
+
+        .bookmark-overflow {{
+            min-height: 26px;
+            min-width: 30px;
+            padding: 4px 7px;
+            margin: 2px 4px 2px 6px;
+            border-radius: 9px;
+            background-color: alpha(@axys_fg, 0.045);
+            color: @axys_fg;
+        }}
+
+        .bookmark-overflow:hover {{
+            background-color: alpha(@axys_fg, 0.08);
+        }}
+
+        .bookmark-overflow-item {{
+            min-height: 30px;
+            padding: 6px 10px;
+            margin: 1px 0;
+            border-radius: 7px;
+            background-color: transparent;
+            color: @axys_fg;
+        }}
+
+        .bookmark-overflow-item:hover {{
+            background-color: alpha(@axys_fg, 0.08);
         }}
         "#
     )

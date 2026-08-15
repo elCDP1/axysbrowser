@@ -59,3 +59,20 @@ privacy:
 
 menu:
   navigation: "Navigation"
+
+history:
+  title: "History"
+  search: "Search history"
+  clear: "Clear history"
+  empty: "No history yet."
+  open: "Open"
+  delete: "Delete"
+
+bookmarks:
+  add: "Add bookmark"
+  edit: "Edit bookmark"
+  name: "Name"
+  url: "URL"
+  save: "Save"
+  cancel: "Cancel"
+  remove: "Remove"

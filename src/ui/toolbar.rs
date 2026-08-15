@@ -1,17 +1,172 @@
 use gtk::prelude::*;
 use gtk::{
-    Align, Box, Button, CenterBox, Entry, EventControllerFocus, Image, MenuButton, Orientation,
-    Popover, Spinner, Stack,
+    Align, Box, Button, CenterBox, Entry, Image, MenuButton, Orientation, Popover, Spinner, Stack,
+    Window,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
 use webkit6::{WebView, prelude::WebViewExt};
 
 use super::menu::{build_menu, build_menu_model};
+
 use crate::app_state::AppState;
+use crate::browser::bookmarks::Bookmark;
 use crate::browser::downloads::DownloadStatus;
 use crate::browser::engine::BrowserEngine;
 use crate::internal::pages::downloads::build_row;
+
+fn bookmark_dialog(
+    parent: &gtk::Widget,
+    state: &Rc<AppState>,
+    existing: Option<Bookmark>,
+    current_url: String,
+    current_title: String,
+    current_web_view: Rc<RefCell<Option<WebView>>>,
+    refresh_star: Rc<dyn Fn()>,
+) {
+    let dialog = Window::builder()
+        .modal(true)
+        .title(if existing.is_some() {
+            rust_i18n::t!("bookmarks.edit")
+        } else {
+            rust_i18n::t!("bookmarks.add")
+        })
+        .default_width(460)
+        .default_height(220)
+        .build();
+
+    if let Some(root) = parent.root()
+        && let Ok(parent_window) = root.downcast::<Window>()
+    {
+        dialog.set_transient_for(Some(&parent_window));
+    }
+
+    let content = Box::new(Orientation::Vertical, 12);
+
+    content.set_margin_top(18);
+    content.set_margin_bottom(18);
+    content.set_margin_start(18);
+    content.set_margin_end(18);
+
+    let name_label = gtk::Label::new(Some(&rust_i18n::t!("bookmarks.name")));
+    name_label.set_halign(Align::Start);
+
+    let name = Entry::new();
+    name.set_hexpand(true);
+
+    let url_label = gtk::Label::new(Some(&rust_i18n::t!("bookmarks.url")));
+    url_label.set_halign(Align::Start);
+
+    let url = Entry::new();
+    url.set_hexpand(true);
+
+    let initial_title = existing
+        .as_ref()
+        .map(|bookmark| bookmark.title.clone())
+        .unwrap_or(current_title);
+
+    let initial_url = existing
+        .as_ref()
+        .map(|bookmark| bookmark.url.clone())
+        .unwrap_or(current_url);
+
+    name.set_text(&initial_title);
+    url.set_text(&initial_url);
+
+    content.append(&name_label);
+    content.append(&name);
+    content.append(&url_label);
+    content.append(&url);
+
+    let buttons = Box::new(Orientation::Horizontal, 8);
+    buttons.set_halign(Align::End);
+
+    let cancel = Button::with_label(&rust_i18n::t!("bookmarks.cancel"));
+    cancel.add_css_class("flat");
+
+    let save = Button::with_label(&rust_i18n::t!("bookmarks.save"));
+    save.add_css_class("suggested-action");
+
+    let remove = Button::with_label(&rust_i18n::t!("bookmarks.remove"));
+    remove.add_css_class("destructive-action");
+    remove.set_visible(existing.is_some());
+
+    buttons.append(&remove);
+    buttons.append(&cancel);
+    buttons.append(&save);
+
+    content.append(&buttons);
+
+    {
+        let dialog = dialog.clone();
+
+        cancel.connect_clicked(move |_| {
+            dialog.close();
+        });
+    }
+
+    {
+        let state = state.clone();
+        let dialog = dialog.clone();
+        let name = name.clone();
+        let url = url.clone();
+        let existing = existing.clone();
+        let current_web_view = current_web_view.clone();
+        let refresh_star = refresh_star.clone();
+
+        save.connect_clicked(move |_| {
+            let title = name.text().trim().to_string();
+            let target = url.text().trim().to_string();
+
+            if target.is_empty()
+                || !(target.starts_with("http://") || target.starts_with("https://"))
+            {
+                url.add_css_class("error");
+                return;
+            }
+
+            let favicon = current_web_view
+                .borrow()
+                .as_ref()
+                .and_then(|view| view.favicon());
+
+            let success = if let Some(bookmark) = existing.as_ref() {
+                state
+                    .bookmarks
+                    .update_with_favicon(&bookmark.url, title, target, favicon.as_ref())
+            } else {
+                state
+                    .bookmarks
+                    .add_with_favicon(title, target, favicon.as_ref())
+            };
+
+            if success {
+                refresh_star();
+                dialog.close();
+            } else {
+                url.add_css_class("error");
+            }
+        });
+    }
+
+    {
+        let state = state.clone();
+        let dialog = dialog.clone();
+        let refresh_star = refresh_star.clone();
+        let existing = existing.clone();
+
+        remove.connect_clicked(move |_| {
+            if let Some(bookmark) = existing.as_ref() {
+                state.bookmarks.remove(&bookmark.url);
+                refresh_star();
+                dialog.close();
+            }
+        });
+    }
+
+    dialog.set_child(Some(&content));
+    dialog.present();
+}
 
 pub struct Toolbar {
     pub root: CenterBox,
@@ -22,6 +177,7 @@ pub struct Toolbar {
     forward: Button,
     reload: Button,
     extensions: Button,
+    bookmark: Button,
     menu: MenuButton,
     downloads: MenuButton,
     _downloads_refresh: Rc<dyn Fn()>,
@@ -31,6 +187,7 @@ impl Toolbar {
     pub fn new(
         current_web_view: Rc<RefCell<Option<WebView>>>,
         on_navigate: Rc<dyn Fn(String)>,
+        on_reload: Rc<dyn Fn()>,
         state: Rc<AppState>,
     ) -> Self {
         let toolbar = CenterBox::new();
@@ -65,7 +222,6 @@ impl Toolbar {
             .build();
 
         let spinner = Spinner::new();
-
         spinner.set_size_request(16, 16);
 
         reload_stack.add_named(&reload_image, Some("reload"));
@@ -100,19 +256,9 @@ impl Toolbar {
             });
         }
 
-        {
-            let current = current_web_view.clone();
-
-            reload.connect_clicked(move |_| {
-                if let Some(view) = current.borrow().as_ref() {
-                    if view.is_loading() {
-                        view.stop_loading();
-                    } else {
-                        BrowserEngine::reload(view);
-                    }
-                }
-            });
-        }
+        reload.connect_clicked(move |_| {
+            on_reload();
+        });
 
         navigation.append(&back);
         navigation.append(&forward);
@@ -133,15 +279,13 @@ impl Toolbar {
             });
         }
 
-        let focus_controller = EventControllerFocus::new();
+        let focus_controller = gtk::EventControllerFocus::new();
 
         {
             let address = address.clone();
 
             focus_controller.connect_enter(move |_| {
-                if address.text() == "axys://newtab" {
-                    address.set_text("");
-                }
+                address.grab_focus();
             });
         }
 
@@ -149,9 +293,94 @@ impl Toolbar {
 
         let right = Box::new(Orientation::Horizontal, 2);
 
-        let downloads_popover = Popover::new();
+        let bookmark = Button::builder()
+            .icon_name("non-starred-symbolic")
+            .tooltip_text(rust_i18n::t!("bookmarks.add").as_ref())
+            .build();
 
-        downloads_popover.set_has_arrow(true);
+        bookmark.add_css_class("flat");
+
+        let bookmark_refresh: Rc<dyn Fn()> = {
+            let bookmark = bookmark.clone();
+
+            let current_web_view = current_web_view.clone();
+
+            let manager = state.bookmarks.clone();
+
+            Rc::new(move || {
+                let current_web_view_ref = current_web_view.borrow();
+
+                let Some(view) = current_web_view_ref.as_ref() else {
+                    bookmark.set_icon_name("non-starred-symbolic");
+
+                    return;
+                };
+
+                let Some(uri) = view.uri().map(|uri| uri.to_string()) else {
+                    bookmark.set_icon_name("non-starred-symbolic");
+
+                    return;
+                };
+
+                if manager.contains(&uri) {
+                    bookmark.set_icon_name("starred-symbolic");
+
+                    bookmark.set_tooltip_text(Some(rust_i18n::t!("bookmarks.edit").as_ref()));
+                } else {
+                    bookmark.set_icon_name("non-starred-symbolic");
+
+                    bookmark.set_tooltip_text(Some(rust_i18n::t!("bookmarks.add").as_ref()));
+                }
+            })
+        };
+
+        state.bookmarks.subscribe(&bookmark_refresh);
+
+        {
+            let state = state.clone();
+
+            let current_web_view = current_web_view.clone();
+
+            let parent = toolbar.clone();
+
+            let refresh_star = bookmark_refresh.clone();
+
+            bookmark.connect_clicked(move |_| {
+                let current_web_view_ref = current_web_view.borrow();
+
+                let Some(view) = current_web_view_ref.as_ref() else {
+                    return;
+                };
+
+                let Some(uri) = view.uri().map(|uri| uri.to_string()) else {
+                    return;
+                };
+
+                if !(uri.starts_with("http://") || uri.starts_with("https://")) {
+                    return;
+                }
+
+                let title = view
+                    .title()
+                    .map(|title| title.to_string())
+                    .filter(|title| !title.trim().is_empty())
+                    .unwrap_or_else(|| uri.clone());
+
+                let existing = state.bookmarks.get(&uri);
+
+                bookmark_dialog(
+                    parent.upcast_ref(),
+                    &state,
+                    existing,
+                    uri,
+                    title,
+                    current_web_view.clone(),
+                    refresh_star.clone(),
+                );
+            });
+        }
+
+        let downloads_popover = Popover::new();
 
         let downloads_content = Box::new(Orientation::Vertical, 8);
 
@@ -190,8 +419,12 @@ impl Toolbar {
 
         menu.add_css_class("flat");
 
+        right.append(&bookmark);
+
         right.append(&downloads);
+
         right.append(&extensions);
+
         right.append(&menu);
 
         toolbar.set_start_widget(Some(&navigation));
@@ -271,6 +504,8 @@ impl Toolbar {
 
         state.downloads.subscribe(&downloads_refresh);
 
+        bookmark_refresh();
+
         Self {
             root: toolbar,
             address,
@@ -280,6 +515,7 @@ impl Toolbar {
             forward,
             reload,
             extensions,
+            bookmark,
             menu,
             downloads,
             _downloads_refresh: downloads_refresh,
@@ -308,6 +544,10 @@ impl Toolbar {
         self.extensions.set_visible(visible);
     }
 
+    pub fn activate_bookmark(&self) {
+        self.bookmark.emit_clicked();
+    }
+
     pub fn refresh_language(&self) {
         self.back
             .set_tooltip_text(Some(rust_i18n::t!("app.back").as_ref()));
@@ -326,6 +566,9 @@ impl Toolbar {
 
         self.downloads
             .set_tooltip_text(Some(rust_i18n::t!("app.downloads").as_ref()));
+
+        self.bookmark
+            .set_tooltip_text(Some(rust_i18n::t!("bookmarks.add").as_ref()));
 
         self.menu
             .set_tooltip_text(Some(rust_i18n::t!("app.menu").as_ref()));

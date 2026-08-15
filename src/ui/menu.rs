@@ -14,6 +14,8 @@ pub fn build_menu_model() -> gio::Menu {
 
     menu.append_submenu(Some(&rust_i18n::t!("menu.navigation")), &navigation);
 
+    menu.append(Some(&rust_i18n::t!("history.title")), Some("win.history"));
+
     menu.append(Some(&rust_i18n::t!("app.downloads")), Some("win.downloads"));
 
     menu.append(

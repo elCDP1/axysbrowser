@@ -15,6 +15,7 @@ use crate::browser::engine::BrowserEngine;
 use crate::browser::tabs::Tab;
 use crate::internal::router;
 
+use super::bookmarks::BookmarkBar;
 use super::tabs::TabBar;
 use super::toolbar::Toolbar;
 
@@ -123,13 +124,22 @@ fn build_browser_window(
 
     let toolbar_slot: Rc<RefCell<Option<Toolbar>>> = Rc::new(RefCell::new(None));
 
+    let bookmark_bar_slot: Rc<RefCell<Option<BookmarkBar>>> = Rc::new(RefCell::new(None));
+
     let select_tab: Rc<dyn Fn(usize)> = {
         let tabs = tabs.clone();
+
         let active_id = active_id.clone();
+
         let top_stack = top_stack.clone();
+
         let current_web_view = current_web_view.clone();
+
         let toolbar_slot = toolbar_slot.clone();
+
         let tabbar_slot = tabbar_slot.clone();
+
+        let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move |id| {
             let tab = {
@@ -170,17 +180,29 @@ fn build_browser_window(
             if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
                 tabbar.refresh(&tabs.borrow(), id);
             }
+
+            if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                bookmark_bar.refresh();
+            }
         })
     };
 
     let close_tab: Rc<dyn Fn(usize)> = {
         let tabs = tabs.clone();
+
         let active_id = active_id.clone();
+
         let top_stack = top_stack.clone();
+
         let toolbar_slot = toolbar_slot.clone();
+
         let tabbar_slot = tabbar_slot.clone();
+
         let current_web_view = current_web_view.clone();
+
         let select_tab = select_tab.clone();
+
+        let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move |id| {
             if tabs.borrow().len() == 1 {
@@ -222,6 +244,10 @@ fn build_browser_window(
                     tabbar.refresh(&tabs.borrow(), id);
                 }
 
+                if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                    bookmark_bar.refresh();
+                }
+
                 return;
             }
 
@@ -253,15 +279,26 @@ fn build_browser_window(
             if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
                 tabbar.refresh(&tabs.borrow(), active_id.get());
             }
+
+            if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                bookmark_bar.refresh();
+            }
         })
     };
 
     let navigate_tab: Rc<dyn Fn(usize, String)> = {
         let tabs = tabs.clone();
+
         let top_stack = top_stack.clone();
+
         let active_id = active_id.clone();
+
         let toolbar_slot = toolbar_slot.clone();
+
         let tabbar_slot = tabbar_slot.clone();
+
+        let bookmark_bar_slot = bookmark_bar_slot.clone();
+
         let search = search.clone();
 
         Rc::new(move |id, input| {
@@ -303,6 +340,10 @@ fn build_browser_window(
                         toolbar.set_loading(false);
 
                         toolbar.set_navigation_state(can_go_back, can_go_forward);
+                    }
+
+                    if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                        bookmark_bar.refresh();
                     }
                 }
 
@@ -349,6 +390,10 @@ fn build_browser_window(
                         can_go_forward || web_view.can_go_forward(),
                     );
                 }
+
+                if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                    bookmark_bar.refresh();
+                }
             }
 
             BrowserEngine::load(&web_view, &target);
@@ -357,10 +402,16 @@ fn build_browser_window(
 
     let go_back: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
+
         let active_id = active_id.clone();
+
         let top_stack = top_stack.clone();
+
         let toolbar_slot = toolbar_slot.clone();
+
         let tabbar_slot = tabbar_slot.clone();
+
+        let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move || {
             let id = active_id.get();
@@ -417,6 +468,10 @@ fn build_browser_window(
                     tabbar.refresh(&tabs.borrow(), active_id.get());
                 }
 
+                if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                    bookmark_bar.refresh();
+                }
+
                 top_stack.set_visible_child(&content);
             } else {
                 BrowserEngine::load(&web_view, &target);
@@ -426,10 +481,16 @@ fn build_browser_window(
 
     let go_forward: Rc<dyn Fn()> = {
         let tabs = tabs.clone();
+
         let active_id = active_id.clone();
+
         let top_stack = top_stack.clone();
+
         let toolbar_slot = toolbar_slot.clone();
+
         let tabbar_slot = tabbar_slot.clone();
+
+        let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         Rc::new(move || {
             let id = active_id.get();
@@ -486,6 +547,10 @@ fn build_browser_window(
                     tabbar.refresh(&tabs.borrow(), active_id.get());
                 }
 
+                if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                    bookmark_bar.refresh();
+                }
+
                 top_stack.set_visible_child(&content);
             } else {
                 BrowserEngine::load(&web_view, &target);
@@ -495,14 +560,25 @@ fn build_browser_window(
 
     let new_tab: NewTabCallback = {
         let tabs = tabs.clone();
+
         let next_id = next_id.clone();
+
         let active_id = active_id.clone();
+
         let top_stack = top_stack.clone();
+
         let current_web_view = current_web_view.clone();
+
         let tabbar_slot = Rc::downgrade(&tabbar_slot);
+
         let toolbar_slot = Rc::downgrade(&toolbar_slot);
+
+        let bookmark_bar_slot = Rc::downgrade(&bookmark_bar_slot);
+
         let navigate_tab = navigate_tab.clone();
+
         let state = state.clone();
+
         let session = session.clone();
 
         Rc::new(move |starting_uri: Option<&str>| {
@@ -513,16 +589,23 @@ fn build_browser_window(
             let content = Stack::new();
 
             content.set_hexpand(true);
+
             content.set_vexpand(true);
+
             content.set_halign(gtk::Align::Fill);
+
             content.set_valign(gtk::Align::Fill);
+
             content.set_transition_type(StackTransitionType::None);
 
             let web_view = WebView::builder().network_session(&session).build();
 
             web_view.set_hexpand(true);
+
             web_view.set_vexpand(true);
+
             web_view.set_halign(gtk::Align::Fill);
+
             web_view.set_valign(gtk::Align::Fill);
 
             BrowserEngine::configure(&web_view, state.settings.borrow().developer_tools);
@@ -555,8 +638,8 @@ fn build_browser_window(
                 let toolbar_slot = toolbar_slot.clone();
 
                 Rc::new(move |visible: bool| {
-                    if let Some(toolbar_slot) = toolbar_slot.upgrade()
-                        && let Some(toolbar) = toolbar_slot.borrow().as_ref()
+                    if let Some(slot) = toolbar_slot.upgrade()
+                        && let Some(toolbar) = slot.borrow().as_ref()
                     {
                         toolbar.set_extensions_visible(visible);
                     }
@@ -579,6 +662,7 @@ fn build_browser_window(
                 "axys://settings",
                 "axys://tools",
                 "axys://downloads",
+                "axys://history",
             ] {
                 if let Some(widget) = router::route(
                     uri,
@@ -627,14 +711,20 @@ fn build_browser_window(
 
             *current_web_view.borrow_mut() = Some(web_view.clone());
 
-            if let Some(toolbar_slot) = toolbar_slot.upgrade()
-                && let Some(toolbar) = toolbar_slot.borrow().as_ref()
+            if let Some(slot) = toolbar_slot.upgrade()
+                && let Some(toolbar) = slot.borrow().as_ref()
             {
                 toolbar.address.set_text(&first_uri);
 
                 toolbar.set_loading(false);
 
                 toolbar.set_navigation_state(false, false);
+            }
+
+            if let Some(slot) = bookmark_bar_slot.upgrade()
+                && let Some(bookmark_bar) = slot.borrow().as_ref()
+            {
+                bookmark_bar.refresh();
             }
 
             {
@@ -646,6 +736,8 @@ fn build_browser_window(
 
                 let tabbar_slot = tabbar_slot.clone();
 
+                let bookmark_bar_slot = bookmark_bar_slot.clone();
+
                 web_view.connect_uri_notify(move |view| {
                     let Some(uri) = view.uri().map(|uri| uri.to_string()) else {
                         return;
@@ -656,14 +748,21 @@ fn build_browser_window(
                     }
 
                     if active_id.get() == id
-                        && let Some(toolbar_slot) = toolbar_slot.upgrade()
-                        && let Some(toolbar) = toolbar_slot.borrow().as_ref()
+                        && let Some(slot) = toolbar_slot.upgrade()
+                        && let Some(toolbar) = slot.borrow().as_ref()
                     {
                         toolbar.address.set_text(&uri);
                     }
 
-                    if let Some(tabbar_slot) = tabbar_slot.upgrade()
-                        && let Some(tabbar) = tabbar_slot.borrow().as_ref()
+                    if active_id.get() == id
+                        && let Some(slot) = bookmark_bar_slot.upgrade()
+                        && let Some(bookmark_bar) = slot.borrow().as_ref()
+                    {
+                        bookmark_bar.refresh();
+                    }
+
+                    if let Some(slot) = tabbar_slot.upgrade()
+                        && let Some(tabbar) = slot.borrow().as_ref()
                     {
                         tabbar.refresh(&tabs.borrow(), active_id.get());
                     }
@@ -694,8 +793,8 @@ fn build_browser_window(
                         tab.title = title;
                     }
 
-                    if let Some(tabbar_slot) = tabbar_slot.upgrade()
-                        && let Some(tabbar) = tabbar_slot.borrow().as_ref()
+                    if let Some(slot) = tabbar_slot.upgrade()
+                        && let Some(tabbar) = slot.borrow().as_ref()
                     {
                         tabbar.refresh(&tabs.borrow(), active_id.get());
                     }
@@ -712,8 +811,8 @@ fn build_browser_window(
                         return;
                     }
 
-                    if let Some(toolbar_slot) = toolbar_slot.upgrade()
-                        && let Some(toolbar) = toolbar_slot.borrow().as_ref()
+                    if let Some(slot) = toolbar_slot.upgrade()
+                        && let Some(toolbar) = slot.borrow().as_ref()
                     {
                         toolbar.set_loading(view.is_loading());
                     }
@@ -725,25 +824,52 @@ fn build_browser_window(
 
                 let toolbar_slot = toolbar_slot.clone();
 
+                let bookmark_bar_slot = bookmark_bar_slot.clone();
+
+                let state = state.clone();
+
                 web_view.connect_load_changed(move |view, event| {
                     if active_id.get() != id {
                         return;
                     }
 
-                    if let Some(toolbar_slot) = toolbar_slot.upgrade()
-                        && let Some(toolbar) = toolbar_slot.borrow().as_ref()
+                    if let Some(slot) = toolbar_slot.upgrade()
+                        && let Some(toolbar) = slot.borrow().as_ref()
                     {
                         toolbar.set_loading(view.is_loading());
 
                         match event {
-                            LoadEvent::Started
-                            | LoadEvent::Committed
-                            | LoadEvent::Finished
-                            | LoadEvent::Redirected => {
+                            LoadEvent::Started | LoadEvent::Committed | LoadEvent::Redirected => {
                                 toolbar.set_navigation_state(
                                     view.can_go_back(),
                                     view.can_go_forward(),
                                 );
+                            }
+
+                            LoadEvent::Finished => {
+                                toolbar.set_navigation_state(
+                                    view.can_go_back(),
+                                    view.can_go_forward(),
+                                );
+
+                                if let Some(slot) = bookmark_bar_slot.upgrade()
+                                    && let Some(bookmark_bar) = slot.borrow().as_ref()
+                                {
+                                    bookmark_bar.refresh();
+                                }
+
+                                if !private_mode
+                                    && let Some(uri) = view.uri().map(|uri| uri.to_string())
+                                    && (uri.starts_with("http://") || uri.starts_with("https://"))
+                                {
+                                    let title = view
+                                        .title()
+                                        .map(|title| title.to_string())
+                                        .filter(|title| !title.trim().is_empty())
+                                        .unwrap_or_else(|| uri.clone());
+
+                                    state.history.add_visit(title, uri);
+                                }
                             }
 
                             _ => {}
@@ -752,8 +878,8 @@ fn build_browser_window(
                 });
             }
 
-            if let Some(tabbar_slot) = tabbar_slot.upgrade()
-                && let Some(tabbar) = tabbar_slot.borrow().as_ref()
+            if let Some(slot) = tabbar_slot.upgrade()
+                && let Some(tabbar) = slot.borrow().as_ref()
             {
                 tabbar.refresh(&tabs.borrow(), id);
             }
@@ -796,10 +922,57 @@ fn build_browser_window(
                 navigate_tab(active_id.get(), input);
             })
         },
+        {
+            let tabs = tabs.clone();
+
+            let active_id = active_id.clone();
+
+            let navigate_tab = navigate_tab.clone();
+
+            let current_web_view = current_web_view.clone();
+
+            Rc::new(move || {
+                let id = active_id.get();
+
+                let uri = tabs
+                    .borrow()
+                    .iter()
+                    .find(|tab| tab.id == id)
+                    .map(|tab| tab.uri.clone());
+
+                if let Some(uri) = uri
+                    && router::page_name(&uri).is_some()
+                {
+                    navigate_tab(id, uri);
+
+                    return;
+                }
+
+                if let Some(view) = current_web_view.borrow().as_ref() {
+                    if view.is_loading() {
+                        view.stop_loading();
+                    } else {
+                        BrowserEngine::reload(view);
+                    }
+                }
+            })
+        },
         state.clone(),
     );
 
     *toolbar_slot.borrow_mut() = Some(toolbar);
+
+    let bookmark_bar = BookmarkBar::new(state.clone(), {
+        let navigate_tab = navigate_tab.clone();
+
+        let active_id = active_id.clone();
+
+        Rc::new(move |url: String| {
+            navigate_tab(active_id.get(), url);
+        })
+    });
+
+    *bookmark_bar_slot.borrow_mut() = Some(bookmark_bar);
 
     if let Some(tabbar) = tabbar_slot.borrow().as_ref() {
         root.append(&tabbar.root);
@@ -807,6 +980,10 @@ fn build_browser_window(
 
     if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
         root.append(&toolbar.root);
+    }
+
+    if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+        root.append(&bookmark_bar.root);
     }
 
     root.append(&top_stack);
@@ -825,6 +1002,8 @@ fn build_browser_window(
         let toolbar_slot = toolbar_slot.clone();
 
         let tabbar_slot = tabbar_slot.clone();
+
+        let bookmark_bar_slot = bookmark_bar_slot.clone();
 
         let navigate_tab = navigate_tab.clone();
 
@@ -891,6 +1070,7 @@ fn build_browser_window(
                     "axys://settings",
                     "axys://tools",
                     "axys://downloads",
+                    "axys://history",
                 ] {
                     let Some(page_name) = router::page_name(page_uri) else {
                         continue;
@@ -925,6 +1105,10 @@ fn build_browser_window(
                 tabbar.refresh(&tabs.borrow(), active_id.get());
             }
 
+            if let Some(bookmark_bar) = bookmark_bar_slot.borrow().as_ref() {
+                bookmark_bar.refresh();
+            }
+
             if let Some(tab) = tabs.borrow().iter().find(|tab| tab.id == active_id.get()) {
                 top_stack.set_visible_child(&tab.content);
 
@@ -947,13 +1131,6 @@ fn build_browser_window(
 
     state.subscribe_language(&language_refresh);
 
-    /*
-     * Keep the language callback alive for the lifetime of the window.
-     *
-     * The signal closure is Fn, so it must not consume the Rc.
-     * Cloning it keeps the captured owner alive without introducing
-     * a reference cycle back into AppState.
-     */
     {
         let language_refresh = language_refresh.clone();
 
@@ -997,12 +1174,7 @@ fn build_browser_window(
             let alt = modifiers.contains(gdk::ModifierType::ALT_MASK);
 
             if ctrl {
-                if let Some(ch) = key.to_unicode()
-                    && matches!(
-                        ch.to_ascii_lowercase(),
-                        'n' | 't' | 'w' | 'l' | 'r' | 'p' | 'j'
-                    )
-                {
+                if let Some(ch) = key.to_unicode() {
                     match ch.to_ascii_lowercase() {
                         'n' => {
                             if shift {
@@ -1051,14 +1223,22 @@ fn build_browser_window(
                             return Propagation::Stop;
                         }
 
-                        'p' if shift => {
-                            build_private_window(&app_for_shortcuts, state_for_shortcuts.clone());
+                        'j' => {
+                            new_tab(Some("axys://downloads"));
 
                             return Propagation::Stop;
                         }
 
-                        'j' => {
-                            new_tab(Some("axys://downloads"));
+                        'h' => {
+                            new_tab(Some("axys://history"));
+
+                            return Propagation::Stop;
+                        }
+
+                        'd' if !shift => {
+                            if let Some(toolbar) = toolbar_slot.borrow().as_ref() {
+                                toolbar.activate_bookmark();
+                            }
 
                             return Propagation::Stop;
                         }
@@ -1223,6 +1403,7 @@ fn build_browser_window(
 
     {
         let app = app.clone();
+
         let state = state.clone();
 
         let action = gio::SimpleAction::new("new-window", None);
@@ -1236,6 +1417,7 @@ fn build_browser_window(
 
     {
         let app = app.clone();
+
         let state = state.clone();
 
         let action = gio::SimpleAction::new("privacy", None);
@@ -1266,6 +1448,18 @@ fn build_browser_window(
 
         action.connect_activate(move |_, _| {
             new_tab(Some("axys://downloads"));
+        });
+
+        window.add_action(&action);
+    }
+
+    {
+        let new_tab = new_tab.clone();
+
+        let action = gio::SimpleAction::new("history", None);
+
+        action.connect_activate(move |_, _| {
+            new_tab(Some("axys://history"));
         });
 
         window.add_action(&action);

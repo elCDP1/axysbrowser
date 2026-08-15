@@ -1,18 +1,24 @@
 use crate::browser::address::{SearchConfig, load_config};
+use crate::browser::bookmarks::BookmarkManager;
 use crate::browser::downloads::DownloadManager;
+use crate::browser::history::HistoryManager;
 use crate::i18n;
 use crate::theme;
+
 use gtk::Application;
 use gtk::CssProvider;
 use gtk::Settings as GtkSettings;
 use gtk::prelude::*;
+
 use serde::{Deserialize, Serialize};
+
 use std::cell::{Cell, RefCell};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
-use webkit6::NetworkSession;
+
+use webkit6::{CookiePersistentStorage, NetworkSession};
 
 fn default_true() -> bool {
     true
@@ -40,14 +46,9 @@ pub struct UserSettings {
     #[serde(default = "default_true")]
     pub show_extensions: bool,
 
-    /// Enables the WebKit Web Inspector for tabs opened after this is toggled.
-    /// Does not retroactively affect tabs that are already open.
     #[serde(default = "default_true")]
     pub developer_tools: bool,
 
-    /// Enables WebKit's Intelligent Tracking Prevention on the shared,
-    /// persistent network session used by normal (non-private) windows.
-    /// Applies immediately, including to already-open tabs.
     #[serde(default = "default_true")]
     pub tracking_prevention: bool,
 
@@ -76,6 +77,8 @@ pub struct AppState {
     pub css_provider: CssProvider,
     pub css_installed: Rc<Cell<bool>>,
     pub downloads: DownloadManager,
+    pub history: HistoryManager,
+    pub bookmarks: BookmarkManager,
     language_listeners: LanguageListeners,
 }
 
@@ -101,9 +104,32 @@ impl AppState {
 
         network_session.set_itp_enabled(settings.tracking_prevention);
 
+        /*
+         * WebKit does not persist cookies automatically.
+         * Use an explicit SQLite cookie store for the
+         * normal persistent browser session.
+         */
+        if let Some(cookie_manager) = network_session.cookie_manager() {
+            let cookie_path = Self::cookie_path();
+
+            if let Some(parent) = cookie_path.parent()
+                && let Err(error) = fs::create_dir_all(parent)
+            {
+                eprintln!("Failed to create cookie directory: {error}");
+            }
+
+            let cookie_path = cookie_path.to_string_lossy().into_owned();
+
+            cookie_manager.set_persistent_storage(&cookie_path, CookiePersistentStorage::Sqlite);
+        }
+
         let downloads = DownloadManager::new(application.clone());
 
         downloads.watch(&network_session);
+
+        let history = HistoryManager::load();
+
+        let bookmarks = BookmarkManager::load();
 
         let state = Rc::new(Self {
             settings: Rc::new(RefCell::new(settings)),
@@ -112,6 +138,8 @@ impl AppState {
             css_provider: CssProvider::new(),
             css_installed: Rc::new(Cell::new(false)),
             downloads,
+            history,
+            bookmarks,
             language_listeners: Rc::new(RefCell::new(Vec::new())),
         });
 
@@ -120,19 +148,24 @@ impl AppState {
         state
     }
 
-    fn config_path() -> PathBuf {
+    fn config_directory() -> PathBuf {
         if let Ok(xdg) = env::var("XDG_CONFIG_HOME") {
-            return PathBuf::from(xdg).join("axysbrowser").join("settings.toml");
+            return PathBuf::from(xdg).join("axysbrowser");
         }
 
         if let Ok(home) = env::var("HOME") {
-            return PathBuf::from(home)
-                .join(".config")
-                .join("axysbrowser")
-                .join("settings.toml");
+            return PathBuf::from(home).join(".config").join("axysbrowser");
         }
 
-        PathBuf::from("settings.toml")
+        PathBuf::from("axysbrowser")
+    }
+
+    fn config_path() -> PathBuf {
+        Self::config_directory().join("settings.toml")
+    }
+
+    fn cookie_path() -> PathBuf {
+        Self::config_directory().join("cookies.sqlite")
     }
 
     fn load_user_settings() -> UserSettings {
@@ -211,7 +244,6 @@ impl AppState {
         self.settings.borrow_mut().dark_mode = dark;
 
         self.apply_theme();
-
         self.save();
     }
 
