@@ -3,16 +3,21 @@ name: Compilar para Windows
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # Esto te permite activar la compilación manualmente desde la web
+  workflow_dispatch: 
 
 jobs:
   build-windows:
     runs-on: windows-2022
+    
+    # 1. ESTO CORRIGE LA ADVERTENCIA DE NODE 20 EN GITHUB RUNNERS
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
     steps:
       - name: Descargar codigo fuente
         uses: actions/checkout@v4
 
-      - name: Instalar Rust
+      - name: Instalar Rust Nativo de Windows
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
@@ -25,23 +30,27 @@ jobs:
       - name: Instalar herramientas de compilación C++
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Instalar y compilar dependencias GTK4/WebKit
+      - name: Instalar y compilar dependencias GTK4 y WebKit
         run: |
           pip install gvsbuild
-          # Compilamos las librerías nativas que usa tu navegador
+          # Compilamos las dependencias nativas esenciales para tu navegador
           gvsbuild build gtk4 libsoup webkit6
         shell: pwsh
 
-      - name: Compilar Navegador
+      - name: Compilar Navegador (Cargo)
         run: |
-          # Agregamos las librerías compiladas al PATH para que Cargo las vea
-          $env:Path += ";C:\gvsbuild\release\bin"
-          $env:PKG_CONFIG_PATH = "C:\gvsbuild\release\lib\pkgconfig"
+          # gvsbuild guarda todo en C:\gtk-build\gtk\x64\release\
+          # Enlazamos las variables necesarias para que Cargo encuentre el enlazador de C
+          $env:Path += ";C:\gtk-build\gtk\x64\release\bin"
+          $env:PKG_CONFIG_PATH = "C:\gtk-build\gtk\x64\release\lib\pkgconfig"
+          
           cargo build --release --target x86_64-pc-windows-msvc
         shell: pwsh
 
-      - name: Guardar el archivo .exe como resultado
+      - name: Guardar el archivo ejecutable y sus librerías (.dll)
         uses: actions/upload-artifact@v4
         with:
-          name: axysbrowser-windows
-          path: target/x86_64-pc-windows-msvc/release/axysbrowser.exe
+          name: axysbrowser-windows-build
+          path: |
+            target/x86_64-pc-windows-msvc/release/axysbrowser.exe
+            C:/gtk-build/gtk/x64/release/bin/*.dll
